@@ -8,6 +8,8 @@ namespace mleader.tradingbot.Engine
         public string ApiSecret { get; set; }
         public string ApiUsername { get; set; }
 
+        public string SlackWebhook { get; set; }
+
         public ILogger Logger { get; set; }
     }
 }

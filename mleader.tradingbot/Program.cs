@@ -26,6 +26,10 @@ namespace mleader.tradingbot
             var username = Console.ReadLine();
             Console.Write("\nCex API Key:");
             var apiKey = Console.ReadLine();
+            Console.Write("\nSlack Notification Webhook Url:");
+            var slackWebhook = Console.ReadLine();
+
+
             var exchangeCurrency = string.Empty;
             while (exchangeCurrency.IsNullOrEmpty())
             {
@@ -89,6 +93,7 @@ namespace mleader.tradingbot
             Console.ForegroundColor = ConsoleColor.White;
             Console.BackgroundColor = ConsoleColor.DarkGreen;
             Console.WriteLine("Automated order execution - Enter 'CONFIRM' to execute order automatically: ");
+            Console.ResetColor();
             autoExecution = Console.ReadLine() == "CONFIRM";
 
 
@@ -110,6 +115,7 @@ namespace mleader.tradingbot
                 ApiSecret = secret,
                 ApiUsername = username,
                 ApiKey = apiKey,
+                SlackWebhook = slackWebhook,
                 Logger = loggerFactory.CreateLogger($"{typeof(CexTradingEngine).Name} - BTC - USD")
             }, exchangeCurrency, targetCurrency, tradingStrategy));
 

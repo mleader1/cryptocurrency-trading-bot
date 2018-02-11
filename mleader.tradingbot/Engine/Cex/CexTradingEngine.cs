@@ -152,6 +152,7 @@ namespace mleader.tradingbot.Engine.Cex
 
         public Task StartAsync()
         {
+            SendWebhookMessage("*Trading Engine Started* :smile:");
             while (_isActive)
             {
                 if (SleepNeeded)
@@ -176,6 +177,7 @@ namespace mleader.tradingbot.Engine.Cex
         public Task StopAsync()
         {
             _isActive = false;
+            SendWebhookMessage("*Trading Engine Stopped* :end:");
             Thread.CurrentThread.Abort();
             return Task.CompletedTask;
         }
@@ -675,6 +677,9 @@ namespace mleader.tradingbot.Engine.Cex
                         Console.ForegroundColor = ConsoleColor.White;
                         Console.WriteLine(
                             $" [BUY] Order {order.OrderId} Executed: {order.Amount / order.Price} {order.ExchangeCurrency} at {order.Price} per {order.ExchangeCurrency}");
+                        SendWebhookMessage(
+                            $" :bitcoin: **[BUY]** Order {order.OrderId} Executed: {order.Amount / order.Price} {order.ExchangeCurrency} at {order.Price} per {order.ExchangeCurrency}");
+
                     }
                 }
             }
@@ -757,6 +762,8 @@ namespace mleader.tradingbot.Engine.Cex
                         Console.ForegroundColor = ConsoleColor.White;
                         Console.WriteLine(
                             $" [SELL] Order {order.OrderId} Executed: {order.Amount} {order.ExchangeCurrency} at {order.Price} per {order.ExchangeCurrency}");
+                        SendWebhookMessage(
+                            $" :moneybag: **[SELL]** Order {order.OrderId} Executed: {order.Amount} {order.ExchangeCurrency} at {order.Price} per {order.ExchangeCurrency}");
                     }
                 }
             }
@@ -774,6 +781,18 @@ namespace mleader.tradingbot.Engine.Cex
                 });
             AccountOpenOrders = orders?.Select(item => item as IOrder).ToList() ?? new List<IOrder>();
             return AccountOpenOrders;
+        }
+
+        public async Task SendWebhookMessage(string message)
+        {
+            if (ApiConfig.SlackWebhook.IsNotNullOrEmpty() && message.IsNotNullOrEmpty())
+            {
+                await new Rest(ApiConfig.SlackWebhook).PostAsync<string>("", new
+                {
+                    text = message,
+                    username = $"MLEADER's CEX.IO Trading Bot - {OperatingExchangeCurrency}/{OperatingTargetCurrency} "
+                });
+            }
         }
 
         private bool HasAvailableAmountToPurchase(decimal buyingAmount, AccountBalanceItem balanceItem)
