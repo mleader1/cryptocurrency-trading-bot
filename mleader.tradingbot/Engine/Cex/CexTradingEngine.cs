@@ -23,7 +23,7 @@ namespace mleader.tradingbot.Engine.Cex
         public List<ITradeHistory> LatestPublicPurchaseHistory { get; set; }
         public List<IOrder> LatestAccountSaleHistory { get; set; }
         public List<IOrder> LatestAccountPurchaseHistory { get; set; }
-        public List<IOrder> AccountOpenOrders { get; set; }
+        private List<IOrder> AccountOpenOrders { get; set; }
 
         public ITradingStrategy TradingStrategy { get; }
 
@@ -31,7 +31,7 @@ namespace mleader.tradingbot.Engine.Cex
         private string OperatingTargetCurrency { get; }
         private List<CurrencyLimit> CurrencyLimits { get; set; }
         private CurrencyLimit ExchangeCurrencyLimit { get; set; }
-        public CurrencyLimit TargetCurrencyLimit { get; set; }
+        private CurrencyLimit TargetCurrencyLimit { get; set; }
         private decimal InitialBuyingCap { get; set; }
         private decimal InitialSellingCap { get; set; }
         private int InitialBatchCycles { get; set; }
@@ -83,8 +83,9 @@ namespace mleader.tradingbot.Engine.Cex
                 if (ApiRequestCounts == 0) ApiRequestcrruedAllowance++;
                 if (ApiRequestCounts > ApiRequestcrruedAllowance)
                 {
-                    SleepNeeded = true;
-                    ApiRequestCounts = 0;
+                    if (ApiRequestCounts - ApiRequestcrruedAllowance > 3)
+                        SleepNeeded = true;
+                    ApiRequestCounts = ApiRequestCounts - ApiRequestcrruedAllowance;
                     ApiRequestcrruedAllowance = 0;
                 }
                 else
@@ -156,7 +157,11 @@ namespace mleader.tradingbot.Engine.Cex
             while (_isActive)
             {
                 if (SleepNeeded)
-                    Thread.Sleep((1 + ApiRequestCounts) * 5000);
+                {
+                    SleepNeeded = false;
+                    Thread.Sleep(ApiRequestCounts * 1000);
+                    ApiRequestCounts = 0;
+                }
 
                 try
                 {
@@ -169,6 +174,7 @@ namespace mleader.tradingbot.Engine.Cex
                 }
 
                 Thread.Sleep(1000);
+                ApiRequestcrruedAllowance++;
             }
 
             return Task.CompletedTask;
@@ -304,6 +310,7 @@ namespace mleader.tradingbot.Engine.Cex
         private async Task RefreshCexCurrencyLimitsAsync()
         {
             var result = await Rest.GetAsync<JObject>("currency_limits");
+            ApiRequestCounts++;
             var limits = result?["data"]?["pairs"]?.Children().Select(item => item.ToObject<CurrencyLimit>());
 
             CurrencyLimits = limits?.ToList() ?? new List<CurrencyLimit>();
@@ -318,6 +325,7 @@ namespace mleader.tradingbot.Engine.Cex
                 signature = GetApiSignature(nonce),
                 nonce
             });
+            ApiRequestCounts++;
             SellingFeeInPercentage = (myFees?.GetValue("data")
                                          ?.Value<JToken>($"{OperatingExchangeCurrency}:{OperatingTargetCurrency}")
                                          ?.Value<decimal>("sell"))
@@ -357,10 +365,11 @@ namespace mleader.tradingbot.Engine.Cex
                 signature = GetApiSignature(nonce),
                 nonce
             }))?.ToAccountBalance();
+            ApiRequestCounts++;
             return AccountBalance;
         }
 
-        public async Task DrawDecisionUIsAsync()
+        private async Task DrawDecisionUIsAsync()
         {
             var sellingPriceInPrinciple = await GetSellingPriceInPrincipleAsync();
             var buyingPriceInPrinciple = await GetPurchasePriceInPrincipleAsync();
@@ -373,6 +382,7 @@ namespace mleader.tradingbot.Engine.Cex
                 ?.Where(item => item.Key == OperatingTargetCurrency)
                 .Select(item => item.Value).FirstOrDefault();
 
+            if (exchangeCurrencyBalance == null || targetCurrencyBalance == null) return;
 
             bool buyingAmountAvailable = true,
                 sellingAmountAvailable = true,
@@ -404,9 +414,6 @@ namespace mleader.tradingbot.Engine.Cex
                                             exchangeCurrencyBalance?.Available).GetValueOrDefault();
             }
 
-            buyingAmountInPrinciple = Math.Round(buyingAmountInPrinciple, 4);
-            sellingAmountInPrinciple = Math.Round(sellingAmountInPrinciple, 4);
-
             var exchangeCurrencyLimit = ExchangeCurrencyLimit?.MinimumExchangeAmount > 0
                 ? ExchangeCurrencyLimit.MinimumExchangeAmount
                 : 0;
@@ -424,39 +431,41 @@ namespace mleader.tradingbot.Engine.Cex
                                     targetCurrencyBalance?.Available;
             sellingAmountAvailable = sellingAmountInPrinciple > 0 &&
                                      sellingAmountInPrinciple <= exchangeCurrencyBalance?.Available;
-            buyingReserveRequirementMatched = targetCurrencyBalance?.Available <= 0 ||
+            buyingReserveRequirementMatched = targetCurrencyBalance?.Total <= 0 ||
                                               (1 - buyingAmountInPrinciple * buyingPriceInPrinciple /
-                                               targetCurrencyBalance?.Available) >=
+                                               targetCurrencyBalance?.Total) >=
                                               TradingStrategy.MinimumReservePercentageAfterInit;
-            sellingReserveRequirementMatched = exchangeCurrencyBalance?.Available <= 0 ||
+            sellingReserveRequirementMatched = exchangeCurrencyBalance?.Total <= 0 ||
                                                (1 - sellingAmountInPrinciple /
-                                                exchangeCurrencyBalance?.Available) >= TradingStrategy
+                                                exchangeCurrencyBalance?.Total) >= TradingStrategy
                                                    .MinimumReservePercentageAfterInit;
 
-            while (!buyingReserveRequirementMatched && buyingAmountInPrinciple > exchangeCurrencyLimit)
+            while (!buyingReserveRequirementMatched && buyingAmountInPrinciple > exchangeCurrencyLimit &&
+                   buyingAmountAvailable)
             {
                 buyingAmountInPrinciple = buyingAmountInPrinciple * 0.9m;
                 buyingAmountAvailable = buyingAmountInPrinciple > 0 &&
                                         buyingAmountInPrinciple * buyingPriceInPrinciple <=
-                                        targetCurrencyBalance?.Available;
-                sellingAmountAvailable = sellingAmountInPrinciple > 0 &&
-                                         sellingAmountInPrinciple <= exchangeCurrencyBalance?.Available;
-                buyingReserveRequirementMatched = targetCurrencyBalance?.Available <= 0 ||
-                                                  (1 - buyingAmountInPrinciple / targetCurrencyBalance?.Available) >=
+                                        targetCurrencyBalance?.Available &&
+                                        buyingAmountInPrinciple >= exchangeCurrencyLimit
+                                        && buyingAmountInPrinciple * buyingPriceInPrinciple >= targetCurrencyLimit;
+                buyingReserveRequirementMatched = targetCurrencyBalance?.Total <= 0 ||
+                                                  (1 - buyingAmountInPrinciple / targetCurrencyBalance?.Total) >=
                                                   TradingStrategy.MinimumReservePercentageAfterInit;
             }
 
-            while (!sellingReserveRequirementMatched && sellingAmountInPrinciple > targetCurrencyLimit)
+            while (!sellingReserveRequirementMatched && sellingAmountInPrinciple > targetCurrencyLimit &&
+                   sellingAmountAvailable)
             {
                 sellingAmountInPrinciple = sellingAmountInPrinciple * 0.9m;
-                buyingAmountAvailable = buyingAmountInPrinciple > 0 &&
-                                        buyingAmountInPrinciple * buyingPriceInPrinciple <=
-                                        targetCurrencyBalance?.Available;
                 sellingAmountAvailable = sellingAmountInPrinciple > 0 &&
-                                         sellingAmountInPrinciple <= exchangeCurrencyBalance?.Available;
-                buyingReserveRequirementMatched = targetCurrencyBalance?.Available <= 0 ||
-                                                  (1 - sellingAmountInPrinciple / exchangeCurrencyBalance?.Available) >=
-                                                  TradingStrategy.MinimumReservePercentageAfterInit;
+                                         sellingAmountInPrinciple <= exchangeCurrencyBalance?.Available &&
+                                         sellingAmountInPrinciple >= exchangeCurrencyLimit &&
+                                         sellingAmountInPrinciple * sellingPriceInPrinciple >= targetCurrencyLimit;
+                sellingReserveRequirementMatched = exchangeCurrencyBalance?.Total <= 0 ||
+                                                   (1 - sellingAmountInPrinciple /
+                                                    exchangeCurrencyBalance?.Total) >=
+                                                   TradingStrategy.MinimumReservePercentageAfterInit;
             }
 
             var finalPortfolioValueWhenBuying =
@@ -466,7 +475,7 @@ namespace mleader.tradingbot.Engine.Cex
                     .GetValueOrDefault(), 2);
             var originalPortfolioValueWhenBuying =
                 Math.Round(
-                    (exchangeCurrencyBalance?.Total * buyingPriceInPrinciple + targetCurrencyBalance?.Total)
+                    (exchangeCurrencyBalance?.Total * PublicLastPurchasePrice + targetCurrencyBalance?.Total)
                     .GetValueOrDefault(), 2);
             var finalPortfolioValueWhenSelling =
                 Math.Round(((exchangeCurrencyBalance?.Total - sellingAmountInPrinciple) * sellingPriceInPrinciple +
@@ -475,7 +484,7 @@ namespace mleader.tradingbot.Engine.Cex
                     .GetValueOrDefault(), 2);
             var originalPortfolioValueWhenSelling =
                 Math.Round(
-                    (exchangeCurrencyBalance?.Total * sellingPriceInPrinciple + targetCurrencyBalance?.Total)
+                    (exchangeCurrencyBalance?.Total * PublicLastPurchasePrice + targetCurrencyBalance?.Total)
                     .GetValueOrDefault(), 2);
 
             finalPortfolioValueDecreasedWhenBuying = finalPortfolioValueWhenBuying < originalPortfolioValueWhenBuying;
@@ -671,21 +680,23 @@ namespace mleader.tradingbot.Engine.Cex
                             amount = buyingAmountInPrinciple,
                             price = buyingPriceInPrinciple
                         });
+                    ApiRequestCounts++;
                     if (order?.OrderId?.IsNotNullOrEmpty() == true)
                     {
                         Console.BackgroundColor = ConsoleColor.DarkGreen;
                         Console.ForegroundColor = ConsoleColor.White;
                         Console.WriteLine(
-                            $" [BUY] Order {order.OrderId} Executed: {order.Amount / order.Price} {order.ExchangeCurrency} at {order.Price} per {order.ExchangeCurrency}");
+                            $" [BUY] Order {order.OrderId} Executed: {order.Amount} {OperatingExchangeCurrency} at {order.Price} per {OperatingExchangeCurrency}");
+                        Console.ResetColor();
                         SendWebhookMessage(
-                            $" :bitcoin: **[BUY]** Order {order.OrderId} Executed: {order.Amount / order.Price} {order.ExchangeCurrency} at {order.Price} per {order.ExchangeCurrency}");
-
+                            $" :smile: *[BUY]* Order {order.OrderId} Executed: {order.Amount} {OperatingExchangeCurrency} at {order.Price} per {OperatingExchangeCurrency}");
                     }
                 }
             }
 
-            if (sellingAmountAvailable && sellingReserveRequirementMatched && !finalPortfolioValueDecreasedWhenBuying &&
-                finalPortfolioValueWhenBuying >= TradingStrategy.StopLine)
+            if (sellingAmountAvailable && sellingReserveRequirementMatched &&
+                !finalPortfolioValueDecreasedWhenSelling &&
+                finalPortfolioValueWhenSelling >= TradingStrategy.StopLine)
             {
                 var immediateExecute = false;
                 var skip = true;
@@ -756,18 +767,21 @@ namespace mleader.tradingbot.Engine.Cex
                             amount = sellingAmountInPrinciple,
                             price = sellingPriceInPrinciple
                         });
+                    ApiRequestCounts++;
                     if (order?.OrderId?.IsNotNullOrEmpty() == true)
                     {
                         Console.BackgroundColor = ConsoleColor.DarkGreen;
                         Console.ForegroundColor = ConsoleColor.White;
                         Console.WriteLine(
-                            $" [SELL] Order {order.OrderId} Executed: {order.Amount} {order.ExchangeCurrency} at {order.Price} per {order.ExchangeCurrency}");
+                            $" [SELL] Order {order.OrderId} Executed: {order.Amount} {OperatingExchangeCurrency} at {order.Price} per {OperatingExchangeCurrency}");
+                        Console.ResetColor();
                         SendWebhookMessage(
-                            $" :moneybag: **[SELL]** Order {order.OrderId} Executed: {order.Amount} {order.ExchangeCurrency} at {order.Price} per {order.ExchangeCurrency}");
+                            $" :moneybag: *[SELL]* Order {order.OrderId} Executed: {order.Amount} {OperatingExchangeCurrency} at {order.Price} per {OperatingExchangeCurrency}");
                     }
                 }
             }
         }
+
 
         public async Task<List<IOrder>> GetOpenOrdersAsync()
         {
@@ -779,19 +793,28 @@ namespace mleader.tradingbot.Engine.Cex
                     key = ApiConfig.ApiKey,
                     nonce
                 });
+            ApiRequestCounts++;
             AccountOpenOrders = orders?.Select(item => item as IOrder).ToList() ?? new List<IOrder>();
             return AccountOpenOrders;
         }
 
-        public async Task SendWebhookMessage(string message)
+        public void SendWebhookMessage(string message)
         {
-            if (ApiConfig.SlackWebhook.IsNotNullOrEmpty() && message.IsNotNullOrEmpty())
+            try
             {
-                await new Rest(ApiConfig.SlackWebhook).PostAsync<string>("", new
+                if (ApiConfig.SlackWebhook.IsNotNullOrEmpty() && message.IsNotNullOrEmpty())
                 {
-                    text = message,
-                    username = $"MLEADER's CEX.IO Trading Bot - {OperatingExchangeCurrency}/{OperatingTargetCurrency} "
-                });
+                    new Rest(ApiConfig.SlackWebhook).PostAsync<string>("", new
+                    {
+                        text = message,
+                        username =
+                        $"MLEADER's CEX.IO Trading Bot - {OperatingExchangeCurrency}/{OperatingTargetCurrency} "
+                    }).Wait();
+                }
+            }
+            catch (Exception ex)
+            {
+                Rest.LogDebug(ex.Message, ex);
             }
         }
 

@@ -105,7 +105,7 @@ namespace mleader.tradingbot
                 HoursOfPublicHistoryOrderForSellDecision = 24,
                 MinimumReservePercentageAfterInit = 0.1m,
                 OrderCapPercentageAfterInit = 0.9m,
-                OrderCapPercentageOnInit = 0.25m,
+                OrderCapPercentageOnInit = 0.5m,
                 AutoDecisionExecution = autoExecution,
                 StopLine = stopLine
             };
