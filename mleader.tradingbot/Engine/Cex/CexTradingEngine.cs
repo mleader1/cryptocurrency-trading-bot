@@ -23,6 +23,7 @@ namespace mleader.tradingbot.Engine.Cex
         public List<ITradeHistory> LatestPublicPurchaseHistory { get; set; }
         public List<IOrder> LatestAccountSaleHistory { get; set; }
         public List<IOrder> LatestAccountPurchaseHistory { get; set; }
+        public List<IOrder> AccountOpenOrders { get; set; }
 
         public ITradingStrategy TradingStrategy { get; }
 
@@ -282,6 +283,7 @@ namespace mleader.tradingbot.Engine.Cex
 
             await RefreshAccountFeesAsync();
             await GetAccountBalanceAsync();
+            await GetOpenOrdersAsync();
             try
             {
                 await DrawDecisionUIsAsync();
@@ -361,6 +363,7 @@ namespace mleader.tradingbot.Engine.Cex
             var sellingPriceInPrinciple = await GetSellingPriceInPrincipleAsync();
             var buyingPriceInPrinciple = await GetPurchasePriceInPrincipleAsync();
 
+
             var exchangeCurrencyBalance =
                 AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
                     .Select(item => item.Value).FirstOrDefault();
@@ -373,7 +376,8 @@ namespace mleader.tradingbot.Engine.Cex
                 sellingAmountAvailable = true,
                 buyingReserveRequirementMatched = true,
                 sellingReserveRequirementMatched = true,
-                finalPortfolioValueDecreased;
+                finalPortfolioValueDecreasedWhenBuying,
+                finalPortfolioValueDecreasedWhenSelling;
             decimal buyingAmountInPrinciple, sellingAmountInPrinciple;
             if (InitialBatchCycles > 0)
             {
@@ -453,41 +457,63 @@ namespace mleader.tradingbot.Engine.Cex
                                                   TradingStrategy.MinimumReservePercentageAfterInit;
             }
 
-            var finalPortfolioValue =
+            var finalPortfolioValueWhenBuying =
                 Math.Round((exchangeCurrencyBalance?.Total * buyingPriceInPrinciple +
                             buyingAmountInPrinciple * buyingPriceInPrinciple +
                             (targetCurrencyBalance?.Total - buyingAmountInPrinciple * buyingPriceInPrinciple))
                     .GetValueOrDefault(), 2);
-            var originalPortfolioValue =
+            var originalPortfolioValueWhenBuying =
                 Math.Round(
                     (exchangeCurrencyBalance?.Total * buyingPriceInPrinciple + targetCurrencyBalance?.Total)
                     .GetValueOrDefault(), 2);
-            finalPortfolioValueDecreased = finalPortfolioValue < originalPortfolioValue;
+            var finalPortfolioValueWhenSelling =
+                Math.Round(((exchangeCurrencyBalance?.Total - sellingAmountInPrinciple) * sellingPriceInPrinciple +
+                            sellingAmountInPrinciple * sellingPriceInPrinciple +
+                            targetCurrencyBalance?.Total)
+                    .GetValueOrDefault(), 2);
+            var originalPortfolioValueWhenSelling =
+                Math.Round(
+                    (exchangeCurrencyBalance?.Total * sellingPriceInPrinciple + targetCurrencyBalance?.Total)
+                    .GetValueOrDefault(), 2);
+
+            finalPortfolioValueDecreasedWhenBuying = finalPortfolioValueWhenBuying < originalPortfolioValueWhenBuying;
+            finalPortfolioValueDecreasedWhenSelling =
+                finalPortfolioValueWhenSelling < originalPortfolioValueWhenSelling;
 
             Console.WriteLine("");
+            Console.ResetColor();
             Console.ForegroundColor = ConsoleColor.Blue;
-            Console.BackgroundColor = ConsoleColor.White;
+            //Console.BackgroundColor = ConsoleColor.White;
             Console.WriteLine("\n\t_____________________________________________________________________");
             Console.WriteLine("\n\t                         Account Balance                            ");
             Console.WriteLine("\t                       +++++++++++++++++++                          ");
             Console.ForegroundColor = ConsoleColor.DarkMagenta;
             Console.WriteLine(
-                $"\n\t {exchangeCurrencyBalance?.Currency}: {Math.Round((exchangeCurrencyBalance?.Available).GetValueOrDefault(), 2)}{(exchangeCurrencyBalance?.InOrders > 0 ? " \t\t\t\t\t" + Math.Round((exchangeCurrencyBalance?.InOrders).GetValueOrDefault(), 2) + "\tIn Orders" : "")}" +
-                $"\n\t {targetCurrencyBalance?.Currency}: {Math.Round((targetCurrencyBalance?.Available).GetValueOrDefault(), 2)}{(targetCurrencyBalance?.InOrders > 0 ? " \t\t\t\t\t" + Math.Round((targetCurrencyBalance?.InOrders).GetValueOrDefault(), 2) + "\tIn Orders" : "")}\t\t\t\t");
+                $"\n\t {exchangeCurrencyBalance?.Currency}: {Math.Round((exchangeCurrencyBalance?.Available).GetValueOrDefault(), 2)}{(exchangeCurrencyBalance?.InOrders > 0 ? " \t\t\t\t" + Math.Round((exchangeCurrencyBalance?.InOrders).GetValueOrDefault(), 2) + "\tIn Orders" : "")}" +
+                $"\n\t {targetCurrencyBalance?.Currency}: {Math.Round((targetCurrencyBalance?.Available).GetValueOrDefault(), 2)}{(targetCurrencyBalance?.InOrders > 0 ? " \t\t\t\t" + Math.Round((targetCurrencyBalance?.InOrders).GetValueOrDefault(), 2) + "\tIn Orders" : "")}\t\t\t\t");
             Console.WriteLine($"\n\t Execution Time: {DateTime.Now}");
             Console.ForegroundColor = ConsoleColor.Blue;
 
             Console.WriteLine("\n\t===================Buy / Sell Price Recommendation===================\n");
-            Console.WriteLine($"\t Buying\t\t\t\t\t\t  Selling  \t\t\t\t");
-            Console.WriteLine($"\t ========\t\t\t\t\t  ========\t\t\t\t");
-            Console.WriteLine($"\t CEX Latest:\t{PublicLastPurchasePrice}\t\t\t\t  {PublicLastSellPrice}\t\t\t\t");
-            Console.WriteLine($"\t Your Latest:\t{AccountLastPurchasePrice}\t\t\t\t  {AccountLastSellPrice}\t\t\t\t");
+            Console.WriteLine($"\t Buying\t\t\t\t\t  Selling  \t\t\t\t");
+            Console.WriteLine($"\t ========\t\t\t\t  ========\t\t\t\t");
+            Console.WriteLine($"\t CEX Latest:\t{PublicLastPurchasePrice}\t\t\t  {PublicLastSellPrice}\t\t\t\t");
+            Console.WriteLine($"\t Your Latest:\t{AccountLastPurchasePrice}\t\t\t  {AccountLastSellPrice}\t\t\t\t");
+            var nextBuyOrder = AccountOpenOrders?.Where(item => item.Type == OrderType.Buy)
+                .OrderByDescending(item => item.Price)
+                .FirstOrDefault();
+            var nextSellOrder = AccountOpenOrders?.Where(item => item.Type == OrderType.Sell)
+                .OrderBy(item => item.Price)
+                .FirstOrDefault();
+            Console.WriteLine(
+                $"\t Next Order:\t{(nextBuyOrder == null ? "N/A" : nextBuyOrder.Amount.ToString(CultureInfo.InvariantCulture) + nextBuyOrder.ExchangeCurrency)}{(nextBuyOrder != null ? "@" + nextBuyOrder.Price : "")}\t\t  " +
+                $"{(nextSellOrder == null ? "N/A" : nextSellOrder.Amount + nextSellOrder.ExchangeCurrency)}{(nextSellOrder != null ? "@" + nextSellOrder.Price : "")}");
             Console.WriteLine("\n\t_____________________________________________________________________\n");
             Console.ForegroundColor = ConsoleColor.DarkGreen;
-            Console.WriteLine("\n\t Buying Decision: \t\t\t\t  Selling Decision:");
+            Console.WriteLine("\n\t Buying Decision: \t\t\t  Selling Decision:");
 
             Console.WriteLine(
-                $"\t Price:\t{buyingPriceInPrinciple} {targetCurrencyBalance?.Currency}\t\t\t\t  {sellingPriceInPrinciple} {targetCurrencyBalance?.Currency}\t\t\t\t");
+                $"\t Price:\t{buyingPriceInPrinciple} {targetCurrencyBalance?.Currency}\t\t\t  {sellingPriceInPrinciple} {targetCurrencyBalance?.Currency}\t\t\t\t");
             Console.Write($"\t ");
 
             #region Buying Decision
@@ -495,7 +521,7 @@ namespace mleader.tradingbot.Engine.Cex
             Console.ForegroundColor = ConsoleColor.White;
             if (buyingAmountAvailable && buyingReserveRequirementMatched)
             {
-                if (!finalPortfolioValueDecreased)
+                if (!finalPortfolioValueDecreasedWhenBuying)
                 {
                     Console.BackgroundColor = ConsoleColor.DarkGreen;
                     Console.Write(
@@ -508,15 +534,16 @@ namespace mleader.tradingbot.Engine.Cex
                     Console.BackgroundColor = ConsoleColor.DarkRed;
                     Console.Write("Depreciation");
                     Console.ResetColor();
-                    Console.Write("\t\t\t\t\t  ");
+                    Console.Write("\t\t  ");
                 }
             }
             else
             {
                 Console.BackgroundColor = ConsoleColor.DarkRed;
-                Console.Write($" {(buyingAmountAvailable ? "Limited Reserve " : "Insufficient Fund ")}");
+                Console.Write(
+                    $"{(buyingAmountAvailable ? $"Limited Reserve - {TradingStrategy.MinimumReservePercentageAfterInit:P2}" : $"Low Fund - Need {buyingAmountInPrinciple * buyingPriceInPrinciple:N2} {targetCurrencyBalance.Currency}")}");
                 Console.ResetColor();
-                Console.Write("\t\t\t\t\t  ");
+                Console.Write("\t\t  ");
             }
 
             #endregion
@@ -526,7 +553,7 @@ namespace mleader.tradingbot.Engine.Cex
             Console.ForegroundColor = ConsoleColor.White;
             if (sellingAmountAvailable && sellingReserveRequirementMatched)
             {
-                if (!finalPortfolioValueDecreased)
+                if (!finalPortfolioValueDecreasedWhenSelling)
                 {
                     Console.BackgroundColor = ConsoleColor.DarkGreen;
                     Console.Write(
@@ -539,36 +566,38 @@ namespace mleader.tradingbot.Engine.Cex
                     Console.BackgroundColor = ConsoleColor.DarkRed;
                     Console.Write("Depreciation");
                     Console.ResetColor();
-                    Console.Write("\t\t\t\n");
+                    Console.Write("\t\t\n");
                 }
             }
             else
             {
                 Console.BackgroundColor = ConsoleColor.DarkRed;
-                Console.Write($" {(sellingAmountAvailable ? "Limited Reserve " : "Insufficient Fund ")}");
+                Console.Write(
+                    $"{(sellingAmountAvailable ? $"Limited Reserve - {TradingStrategy.MinimumReservePercentageAfterInit:P2}" : $"Low Fund - Need {sellingAmountInPrinciple:N4} {exchangeCurrencyBalance.Currency}")}");
                 Console.ResetColor();
-                Console.Write("\t\t\t\n");
+                Console.Write("\t\t\n");
             }
 
             #endregion
 
             Console.ResetColor();
-            if (true || (sellingAmountAvailable && sellingReserveRequirementMatched &&
-                         buyingAmountAvailable && buyingReserveRequirementMatched))
-            {
-                Console.WriteLine("\n\n\t Portfolio Estimates (A.I.):");
-                Console.WriteLine(
-                    $"\t Current:\t{originalPortfolioValue} {targetCurrencyBalance?.Currency}\t\t  After: {finalPortfolioValue} {targetCurrencyBalance?.Currency}\t\t\t\t");
-                Console.WriteLine(
-                    $"\t Difference:\t{finalPortfolioValue - originalPortfolioValue} {targetCurrencyBalance?.Currency}\t\t Stop: {TradingStrategy.StopLine} {targetCurrencyBalance.Currency}\t\t  ");
-            }
+            Console.WriteLine("\n\n\t Portfolio Estimates (A.I.):");
+            Console.WriteLine(
+                $"\t Current:\t{originalPortfolioValueWhenBuying} {targetCurrencyBalance?.Currency}\t\t  {originalPortfolioValueWhenSelling} {targetCurrencyBalance?.Currency}\t\t\t\t");
+            Console.WriteLine(
+                $"\t After  :\t{finalPortfolioValueWhenBuying} {targetCurrencyBalance?.Currency}\t\t  {finalPortfolioValueWhenSelling} {targetCurrencyBalance?.Currency}\t\t\t\t");
+            Console.WriteLine(
+                $"\t Difference:\t{finalPortfolioValueWhenBuying - originalPortfolioValueWhenBuying} {targetCurrencyBalance?.Currency}\t\t  {finalPortfolioValueWhenSelling - originalPortfolioValueWhenSelling} {targetCurrencyBalance?.Currency} ");
+            Console.ForegroundColor = ConsoleColor.DarkBlue;
+            Console.WriteLine(
+                $"\n\t Stop Line:\t{TradingStrategy.StopLine} {targetCurrencyBalance.Currency}\t\t  ");
 
             Console.ForegroundColor = ConsoleColor.Blue;
             Console.WriteLine("\n\t===============================****==================================\n");
             Console.ResetColor();
             Console.WriteLine("");
-            if (buyingAmountAvailable && buyingReserveRequirementMatched && !finalPortfolioValueDecreased &&
-                finalPortfolioValue >= TradingStrategy.StopLine)
+            if (buyingAmountAvailable && buyingReserveRequirementMatched && !finalPortfolioValueDecreasedWhenBuying &&
+                finalPortfolioValueWhenBuying >= TradingStrategy.StopLine)
             {
                 var immediateExecute = false;
                 var skip = true;
@@ -650,8 +679,8 @@ namespace mleader.tradingbot.Engine.Cex
                 }
             }
 
-            if (sellingAmountAvailable && sellingReserveRequirementMatched && !finalPortfolioValueDecreased &&
-                finalPortfolioValue >= TradingStrategy.StopLine)
+            if (sellingAmountAvailable && sellingReserveRequirementMatched && !finalPortfolioValueDecreasedWhenBuying &&
+                finalPortfolioValueWhenBuying >= TradingStrategy.StopLine)
             {
                 var immediateExecute = false;
                 var skip = true;
@@ -735,7 +764,16 @@ namespace mleader.tradingbot.Engine.Cex
 
         public async Task<List<IOrder>> GetOpenOrdersAsync()
         {
-            throw new System.NotImplementedException();
+            var nonce = GetNonce();
+            var orders = await Rest.PostAsync<List<ShortOrder>>(
+                $"open_orders/{OperatingExchangeCurrency}/{OperatingTargetCurrency}", new
+                {
+                    signature = GetApiSignature(nonce),
+                    key = ApiConfig.ApiKey,
+                    nonce
+                });
+            AccountOpenOrders = orders?.Select(item => item as IOrder).ToList() ?? new List<IOrder>();
+            return AccountOpenOrders;
         }
 
         private bool HasAvailableAmountToPurchase(decimal buyingAmount, AccountBalanceItem balanceItem)

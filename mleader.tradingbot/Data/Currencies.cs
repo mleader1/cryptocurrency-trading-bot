@@ -17,7 +17,7 @@ namespace mleader.tradingbot.Data
         public const string RUB = "RUB";
 
 
-        public List<string> SupportedCurrencies => new List<string>
+        public static List<string> SupportedCurrencies => new List<string>
         {
             BTC,
             BCH,
@@ -31,7 +31,7 @@ namespace mleader.tradingbot.Data
             RUB
         };
 
-        public List<string> SupportedFiatCurrencies => new List<string>
+        public static List<string> SupportedFiatCurrencies => new List<string>
         {
             USD,
             EUR,
