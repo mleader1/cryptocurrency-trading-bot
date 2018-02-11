@@ -1,6 +1,7 @@
 # cryptocurrency-trading-bot
 A trading bot created for trading on exchanges (currently only support CEX.IO)
 
+![Bot Running In Production](https://raw.githubusercontent.com/mleader1/cryptocurrency-trading-bot/master/demo.png)
 
 ## Disclaimer
 This is a working bot using strategy and logics that fits the developer's own profit growth purpose, it does not guarantee anyone including the developer himself profit increase and may result serious investment loss if not monitored and used properly.
