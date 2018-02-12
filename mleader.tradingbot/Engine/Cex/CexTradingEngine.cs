@@ -460,24 +460,14 @@ namespace mleader.tradingbot.Engine.Cex
             BuyingFeeInAmount = 0;
         }
 
-        public Task<decimal> GetSellingPriceInPrincipleAsync() => Task.FromResult(Math.Floor(ProposedSellingPrice *
-                                                                                             (1 +
-                                                                                              BuyingFeeInPercentage +
-                                                                                              AverageTradingChangeRatio /
-                                                                                              2 *
-                                                                                              (IsPublicUpTrending
-                                                                                                  ? 1
-                                                                                                  : -1)) +
-                                                                                             BuyingFeeInAmount));
+        public Task<decimal> GetSellingPriceInPrincipleAsync() => Task.FromResult(Math.Ceiling(ProposedSellingPrice *
+                                                                                               (1 +
+                                                                                                BuyingFeeInPercentage) +
+                                                                                               BuyingFeeInAmount));
 
         public Task<decimal> GetPurchasePriceInPrincipleAsync() => Task.FromResult(Math.Floor(ProposedPurchasePrice *
                                                                                               (1 -
-                                                                                               BuyingFeeInPercentage +
-                                                                                               AverageTradingChangeRatio /
-                                                                                               2 *
-                                                                                               (IsPublicUpTrending
-                                                                                                   ? 1
-                                                                                                   : -1)) +
+                                                                                               BuyingFeeInPercentage) -
                                                                                               BuyingFeeInAmount));
 
 
@@ -1217,7 +1207,9 @@ namespace mleader.tradingbot.Engine.Cex
         /// Is market price going up: buying amount > selling amount
         /// </summary>
         private bool IsPublicUpTrending => LatestPublicPurchaseHistory?.Sum(item => item.Amount) >
-                                           LatestPublicSaleHistory?.Sum(item => item.Amount);
+                                           LatestPublicSaleHistory?.Sum(item => item.Amount) ||
+                                           (CurrentOrderbook != null &&
+                                            CurrentOrderbook.BuyTotal > CurrentOrderbook.SellTotal);
 
         /// <summary>
         /// Find the last X records of public sale prices and do a weighted average
@@ -1404,32 +1396,57 @@ namespace mleader.tradingbot.Engine.Cex
         {
             get
             {
-                var orderbookPriorityAsks = CurrentOrderbook.Asks?.Where(i => i[0] <= ReasonableAccountLastSellPrice);
-                var orderbookValuatedPrice = CurrentOrderbook.Asks.Min(i => i[0]);
+                var orderbookPriorityAsks = CurrentOrderbook?.Asks?.Where(i => i[0] <= ReasonableAccountLastSellPrice);
+                var orderbookValuatedPrice = (CurrentOrderbook?.Asks?.Min(i => i[0])).GetValueOrDefault();
                 if (orderbookPriorityAsks?.Count() > 0)
                 {
                     orderbookValuatedPrice = orderbookPriorityAsks.Sum(i => i[1] * i[0]) /
                                              orderbookPriorityAsks.Sum(i => i[1]);
                 }
 
-                return Math.Max(
-                    new[]
-                    {
-                        PublicWeightedAverageSellPrice,
-                        PublicLastSellPrice,
-                        ReasonableAccountWeightedAverageSellPrice,
-                        PublicWeightedAverageBestSellPrice,
-                        PublicWeightedAverageLowSellPrice,
-                        ReasonableAccountLastSellPrice,
-                        //(PublicLastSellPrice + ReasonableAccountLastSellPrice) / 2,
-                        PublicLastSellPrice *
-                        (1 + AverageTradingChangeRatio * (IsPublicUpTrending ? 1 : -1)),
-                        orderbookValuatedPrice
-                    }.Average(),
-                    orderbookValuatedPrice
+                if (orderbookValuatedPrice <= 0) orderbookValuatedPrice = ReasonableAccountLastSellPrice;
+
+                var proposedSellingPrice = Math.Max(
+                                               new[]
+                                               {
+                                                   PublicWeightedAverageSellPrice,
+                                                   PublicLastSellPrice,
+                                                   ReasonableAccountWeightedAverageSellPrice,
+                                                   PublicWeightedAverageBestSellPrice,
+                                                   PublicWeightedAverageLowSellPrice,
+                                                   //(PublicLastSellPrice + ReasonableAccountLastSellPrice) / 2,
+                                                   PublicLastSellPrice *
+                                                   (1 + AverageTradingChangeRatio * (IsPublicUpTrending ? 1 : -1)),
+                                                   orderbookValuatedPrice
+                                               }.Average(),
+                                               orderbookValuatedPrice
 //                    (PublicLastSellPrice + ReasonableAccountLastSellPrice + ReasonableAccountLastPurchasePrice) / 3,
 //                    (ReasonableAccountLastSellPrice + orderbookValuatedPrice) / 2
-                );
+                                           ) * (1 + AverageTradingChangeRatio * (IsPublicUpTrending ? 1 : -1));
+
+                orderbookPriorityAsks = CurrentOrderbook?.Asks?.Where(i => i[0] <= proposedSellingPrice);
+                var exchangeCurrencyBalance =
+                    AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
+                        ?.Select(item => item.Value)?.FirstOrDefault();
+                var targetCurrencyBalance =
+                    AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingTargetCurrency)
+                        ?.Select(item => item.Value)?.FirstOrDefault();
+
+                if (!(orderbookPriorityAsks?.Count() > 0) || exchangeCurrencyBalance == null ||
+                    targetCurrencyBalance == null) return proposedSellingPrice;
+                var currentPortfolioValue =
+                    exchangeCurrencyBalance.Total * PublicLastSellPrice + targetCurrencyBalance.Total;
+
+                foreach (var order in orderbookPriorityAsks)
+                {
+                    var portfolioValueBasedOnOrder =
+                        exchangeCurrencyBalance.Total * order[0] + targetCurrencyBalance.Total;
+                    //i.e. still make a profit
+                    if (portfolioValueBasedOnOrder >= currentPortfolioValue) return order[0];
+                }
+
+
+                return proposedSellingPrice;
             }
         }
 
@@ -1442,33 +1459,57 @@ namespace mleader.tradingbot.Engine.Cex
             get
             {
                 var orderbookPriorityBids =
-                    CurrentOrderbook.Bids?.Where(i => i[0] >= ReasonableAccountLastPurchasePrice);
-                var orderbookValuatedPrice = CurrentOrderbook.Bids.Min(i => i[0]);
+                    CurrentOrderbook?.Bids?.Where(i => i[0] >= ReasonableAccountLastPurchasePrice);
+                var orderbookValuatedPrice = (CurrentOrderbook?.Bids?.Max(i => i[0])).GetValueOrDefault();
                 if (orderbookPriorityBids?.Count() > 0)
                 {
                     orderbookValuatedPrice = orderbookPriorityBids.Sum(i => i[1] * i[0]) /
                                              orderbookPriorityBids.Sum(i => i[1]);
                 }
 
-                return Math.Min(
-                    new[]
-                    {
-                        PublicWeightedAveragePurchasePrice,
-                        PublicLastPurchasePrice,
-                        ReasonableAccountWeightedAveragePurchasePrice,
-                        PublicWeightedAverageBestPurchasePrice,
-                        PublicWeightedAverageLowPurchasePrice,
-                        ReasonableAccountLastPurchasePrice,
-                        //(PublicLastPurchasePrice + ReasonableAccountLastPurchasePrice) / 2,
-                        PublicLastPurchasePrice *
-                        (1 + AverageTradingChangeRatio * (IsPublicUpTrending ? 1 : -1)),
-                        orderbookValuatedPrice
-                    }.Average(),
-                    orderbookValuatedPrice
+                if (orderbookValuatedPrice <= 0) orderbookValuatedPrice = ReasonableAccountLastPurchasePrice;
+
+                var proposedPurchasePrice = Math.Min(
+                                                new[]
+                                                {
+                                                    PublicWeightedAveragePurchasePrice,
+                                                    PublicLastPurchasePrice,
+                                                    ReasonableAccountWeightedAveragePurchasePrice,
+                                                    PublicWeightedAverageBestPurchasePrice,
+                                                    PublicWeightedAverageLowPurchasePrice,
+                                                    //(PublicLastPurchasePrice + ReasonableAccountLastPurchasePrice) / 2,
+                                                    PublicLastPurchasePrice *
+                                                    (1 + AverageTradingChangeRatio * (IsPublicUpTrending ? 1 : -1)),
+                                                    orderbookValuatedPrice
+                                                }.Average(),
+                                                orderbookValuatedPrice
 //                    (PublicLastPurchasePrice + ReasonableAccountLastPurchasePrice + ReasonableAccountLastSellPrice +
 //                     PublicLastSellPrice) / 4,
 //                    (ReasonableAccountLastPurchasePrice + orderbookValuatedPrice) / 2
-                );
+                                            ) * (1 + AverageTradingChangeRatio * (IsPublicUpTrending ? 1 : -1));
+
+                orderbookPriorityBids = CurrentOrderbook?.Bids?.Where(i => i[0] >= proposedPurchasePrice);
+                var exchangeCurrencyBalance =
+                    AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
+                        ?.Select(item => item.Value)?.FirstOrDefault();
+                var targetCurrencyBalance =
+                    AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingTargetCurrency)
+                        ?.Select(item => item.Value)?.FirstOrDefault();
+
+                if (!(orderbookPriorityBids?.Count() > 0) || exchangeCurrencyBalance == null ||
+                    targetCurrencyBalance == null) return proposedPurchasePrice;
+                var currentPortfolioValue =
+                    exchangeCurrencyBalance.Total * PublicLastSellPrice + targetCurrencyBalance.Total;
+
+                foreach (var order in orderbookPriorityBids)
+                {
+                    var portfolioValueBasedOnOrder =
+                        exchangeCurrencyBalance.Total * order[0] + targetCurrencyBalance.Total;
+                    //i.e. still make a profit
+                    if (portfolioValueBasedOnOrder >= currentPortfolioValue) return order[0];
+                }
+
+                return proposedPurchasePrice;
             }
         }
 
