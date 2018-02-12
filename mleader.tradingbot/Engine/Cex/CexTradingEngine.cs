@@ -1400,47 +1400,77 @@ namespace mleader.tradingbot.Engine.Cex
         /// [ProposedSellingPrice] = MAX(AVG([PublicWeightedAverageSellPrice],[PublicLastSellPrice], [AccountWeightedAveragePurchasePrice], [AccountWeightedAverageSellPrice]),[PublicLastSellPrice])
         /// </summary>
         /// <returns></returns>
-        private decimal ProposedSellingPrice => new[]
+        private decimal ProposedSellingPrice
         {
-            new[]
+            get
             {
-                PublicWeightedAverageSellPrice,
-                PublicLastSellPrice,
-                ReasonableAccountWeightedAverageSellPrice,
-                ReasonableAccountLastPurchasePrice,
-                PublicWeightedAverageBestSellPrice,
-                PublicWeightedAverageLowSellPrice,
-                ReasonableAccountLastSellPrice,
-                (PublicLastSellPrice + ReasonableAccountLastSellPrice) / 2,
-                (ReasonableAccountLastSellPrice + ReasonableAccountLastPurchasePrice) / 2,
-                ReasonableAccountLastSellPrice * (1 + AverageTradingChangeRatio * (IsPublicUpTrending ? 1 : -1))
-            }.Average(),
-            PublicLastSellPrice,
-            (PublicLastSellPrice + ReasonableAccountLastSellPrice) / 2,
-            (ReasonableAccountLastPurchasePrice + ReasonableAccountLastSellPrice) / 2
-        }.Max();
+                var orderbookPriorityAsks = CurrentOrderbook.Asks?.Where(i => i[0] <= ReasonableAccountLastSellPrice);
+                var orderbookValuatedPrice = CurrentOrderbook.Asks.Min(i => i[0]);
+                if (orderbookPriorityAsks?.Count() > 0)
+                {
+                    orderbookValuatedPrice = orderbookPriorityAsks.Sum(i => i[1] * i[0]) /
+                                             orderbookPriorityAsks.Sum(i => i[1]);
+                }
+
+                return Math.Max(
+                    new[]
+                    {
+                        PublicWeightedAverageSellPrice,
+                        PublicLastSellPrice,
+                        ReasonableAccountWeightedAverageSellPrice,
+                        PublicWeightedAverageBestSellPrice,
+                        PublicWeightedAverageLowSellPrice,
+                        ReasonableAccountLastSellPrice,
+                        //(PublicLastSellPrice + ReasonableAccountLastSellPrice) / 2,
+                        PublicLastSellPrice *
+                        (1 + AverageTradingChangeRatio * (IsPublicUpTrending ? 1 : -1)),
+                        orderbookValuatedPrice
+                    }.Average(),
+                    orderbookValuatedPrice
+//                    (PublicLastSellPrice + ReasonableAccountLastSellPrice + ReasonableAccountLastPurchasePrice) / 3,
+//                    (ReasonableAccountLastSellPrice + orderbookValuatedPrice) / 2
+                );
+            }
+        }
 
         /// <summary>
         /// [ProposedPurchasePrice] = MIN(AVG([PublicWeightedAveragePurchasePrice],[PublicLastPurchasePrice], [PublicWeightedAverageBestPurchasePrice], [AccountWeightedAverageSellPrice]), [PublicLastPurchasePrice])
         /// </summary>
         /// <returns></returns>
-        private decimal ProposedPurchasePrice => new[]
+        private decimal ProposedPurchasePrice
         {
-            new[]
+            get
             {
-                PublicWeightedAveragePurchasePrice,
-                PublicLastPurchasePrice,
-                ReasonableAccountWeightedAveragePurchasePrice,
-                ReasonableAccountLastPurchasePrice,
-                PublicWeightedAverageBestPurchasePrice,
-                (PublicLastPurchasePrice + ReasonableAccountLastPurchasePrice) / 2,
-                (ReasonableAccountLastSellPrice + ReasonableAccountLastPurchasePrice) / 2,
-                ReasonableAccountLastPurchasePrice * (1 + AverageTradingChangeRatio * (IsPublicUpTrending ? 1 : -1))
-            }.Average(),
-            PublicLastPurchasePrice,
-            (PublicLastPurchasePrice + ReasonableAccountLastPurchasePrice) / 2,
-            (ReasonableAccountLastSellPrice + ReasonableAccountLastPurchasePrice) / 2
-        }.Min();
+                var orderbookPriorityBids =
+                    CurrentOrderbook.Bids?.Where(i => i[0] >= ReasonableAccountLastPurchasePrice);
+                var orderbookValuatedPrice = CurrentOrderbook.Bids.Min(i => i[0]);
+                if (orderbookPriorityBids?.Count() > 0)
+                {
+                    orderbookValuatedPrice = orderbookPriorityBids.Sum(i => i[1] * i[0]) /
+                                             orderbookPriorityBids.Sum(i => i[1]);
+                }
+
+                return Math.Min(
+                    new[]
+                    {
+                        PublicWeightedAveragePurchasePrice,
+                        PublicLastPurchasePrice,
+                        ReasonableAccountWeightedAveragePurchasePrice,
+                        PublicWeightedAverageBestPurchasePrice,
+                        PublicWeightedAverageLowPurchasePrice,
+                        ReasonableAccountLastPurchasePrice,
+                        //(PublicLastPurchasePrice + ReasonableAccountLastPurchasePrice) / 2,
+                        PublicLastPurchasePrice *
+                        (1 + AverageTradingChangeRatio * (IsPublicUpTrending ? 1 : -1)),
+                        orderbookValuatedPrice
+                    }.Average(),
+                    orderbookValuatedPrice
+//                    (PublicLastPurchasePrice + ReasonableAccountLastPurchasePrice + ReasonableAccountLastSellPrice +
+//                     PublicLastSellPrice) / 4,
+//                    (ReasonableAccountLastPurchasePrice + orderbookValuatedPrice) / 2
+                );
+            }
+        }
 
         private decimal ReasonableAccountLastPurchasePrice =>
             Math.Abs(AccountLastPurchasePrice - PublicLastPurchasePrice) /
