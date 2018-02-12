@@ -63,7 +63,7 @@ namespace mleader.tradingbot.Engine.Cex
                 OrderCapPercentageAfterInit = 0.6m,
                 OrderCapPercentageOnInit = 0.25m,
                 AutoDecisionExecution = true,
-                MarketChangeSensitivityRatio = 0.25m
+                MarketChangeSensitivityRatio = 0.1m
             };
 
             AutoExecution = TradingStrategy.AutoDecisionExecution;
@@ -1201,22 +1201,29 @@ namespace mleader.tradingbot.Engine.Cex
         }.Min();
 
         private decimal ReasonableAccountLastPurchasePrice =>
-            Math.Abs(AccountLastPurchasePrice - PublicLastPurchasePrice) / PublicLastPurchasePrice > TradingStrategy.MarketChangeSensitivityRatio
+            Math.Abs(AccountLastPurchasePrice - PublicLastPurchasePrice) /
+            Math.Min(PublicLastPurchasePrice, AccountLastPurchasePrice) >
+            TradingStrategy.MarketChangeSensitivityRatio
                 ? PublicLastPurchasePrice
                 : AccountLastPurchasePrice;
 
         private decimal ReasonableAccountLastSellPrice =>
-            Math.Abs(AccountLastSellPrice - PublicLastSellPrice) / PublicLastSellPrice > TradingStrategy.MarketChangeSensitivityRatio
+            Math.Abs(AccountLastSellPrice - PublicLastSellPrice) / Math.Min(PublicLastSellPrice, AccountLastSellPrice) >
+            TradingStrategy.MarketChangeSensitivityRatio
                 ? PublicLastSellPrice
                 : AccountLastSellPrice;
 
         private decimal ReasonableAccountWeightedAverageSellPrice =>
-            Math.Abs(AccountWeightedAverageSellPrice - PublicLastSellPrice) / PublicLastSellPrice > TradingStrategy.MarketChangeSensitivityRatio
+            Math.Abs(AccountWeightedAverageSellPrice - PublicLastSellPrice) /
+            Math.Min(AccountWeightedAverageSellPrice, PublicLastSellPrice) >
+            TradingStrategy.MarketChangeSensitivityRatio
                 ? PublicLastSellPrice
                 : AccountWeightedAverageSellPrice;
 
         private decimal ReasonableAccountWeightedAveragePurchasePrice =>
-            Math.Abs(AccountWeightedAveragePurchasePrice - PublicLastPurchasePrice) / PublicLastPurchasePrice > TradingStrategy.MarketChangeSensitivityRatio
+            Math.Abs(AccountWeightedAveragePurchasePrice - PublicLastPurchasePrice) /
+            Math.Min(PublicLastPurchasePrice, AccountWeightedAveragePurchasePrice) >
+            TradingStrategy.MarketChangeSensitivityRatio
                 ? PublicLastPurchasePrice
                 : AccountWeightedAveragePurchasePrice;
 
