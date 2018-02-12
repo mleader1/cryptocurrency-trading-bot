@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Runtime.Serialization;
 using Newtonsoft.Json;
+using OElite;
 
 namespace mleader.tradingbot.Data.Cex
 {
@@ -14,9 +15,17 @@ namespace mleader.tradingbot.Data.Cex
         {
             get
             {
-                var convertDateTime = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-                convertDateTime = convertDateTime.AddSeconds(Time).ToLocalTime();
-                return convertDateTime;
+                try
+                {
+                    var convertDateTime = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+                    convertDateTime = convertDateTime.AddMilliseconds(Time).ToLocalTime();
+                    return convertDateTime;
+                }
+                catch (Exception ex)
+                {
+                }
+
+                return default(DateTime);
             }
         }
 
