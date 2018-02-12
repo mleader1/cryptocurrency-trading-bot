@@ -882,6 +882,7 @@ namespace mleader.tradingbot.Engine.Cex
                         Console.WriteLine(
                             $" [SELL] Order {order.OrderId} Executed: {order.Amount} {OperatingExchangeCurrency} at {order.Price} per {OperatingExchangeCurrency}");
                         Console.ResetColor();
+                        
                         SendWebhookMessage(
                             $" :moneybag: *[SELL]* Order {order.OrderId} Executed: {order.Amount} {OperatingExchangeCurrency} at {order.Price} per {OperatingExchangeCurrency}");
                         SendWebhookMessage(
