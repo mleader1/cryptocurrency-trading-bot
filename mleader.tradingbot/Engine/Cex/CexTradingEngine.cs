@@ -526,9 +526,7 @@ namespace mleader.tradingbot.Engine.Cex
 
             while (!buyingReserveRequirementMatched && buyingAmountInPrinciple > exchangeCurrencyLimit)
             {
-                buyingAmountInPrinciple = exchangeCurrencyLimit > 0
-                    ? buyingAmountInPrinciple * 0.9m
-                    : (targetCurrencyBalance?.Available).GetValueOrDefault();
+                buyingAmountInPrinciple = buyingAmountInPrinciple * 0.9m;
 
                 buyingAmountAvailable = buyingAmountInPrinciple > 0 &&
                                         buyingAmountInPrinciple * buyingPriceInPrinciple <=
@@ -542,13 +540,15 @@ namespace mleader.tradingbot.Engine.Cex
                                                   (1 - buyingAmountInPrinciple * buyingPriceInPrinciple /
                                                    calculatedTotalTargetCurrencyAmount) >=
                                                   TradingStrategy.MinimumReservePercentageAfterInit;
+
+                if (Math.Round(buyingAmountInPrinciple, 8) ==
+                    Math.Round((targetCurrencyBalance?.Available).GetValueOrDefault(), 8))
+                    break;
             }
 
             while (!sellingReserveRequirementMatched && sellingAmountInPrinciple > targetCurrencyLimit)
             {
-                sellingAmountInPrinciple = targetCurrencyLimit > 0
-                    ? sellingAmountInPrinciple * 0.9m
-                    : (exchangeCurrencyBalance?.Available).GetValueOrDefault();
+                sellingAmountInPrinciple = sellingAmountInPrinciple * 0.9m;
                 sellingAmountAvailable = sellingAmountInPrinciple > 0 &&
                                          sellingAmountInPrinciple <= exchangeCurrencyBalance?.Available &&
                                          sellingAmountInPrinciple >= exchangeCurrencyLimit &&
@@ -556,10 +556,16 @@ namespace mleader.tradingbot.Engine.Cex
                 var calculatedTotalExchangeCurrencyAmount =
                 (exchangeCurrencyBalance?.Available +
                  (targetCurrencyBalance?.Total - targetCurrencyBalance?.Available) / sellingPriceInPrinciple);
+
                 sellingReserveRequirementMatched = calculatedTotalExchangeCurrencyAmount <= 0 ||
                                                    (1 - sellingAmountInPrinciple /
                                                     calculatedTotalExchangeCurrencyAmount) >=
                                                    TradingStrategy.MinimumReservePercentageAfterInit;
+                if (Math.Round(sellingAmountInPrinciple, 8) ==
+                    Math.Round((exchangeCurrencyBalance?.Available).GetValueOrDefault(), 8))
+                {
+                    break;
+                }
             }
 
             var finalPortfolioValueWhenBuying =
@@ -646,7 +652,7 @@ namespace mleader.tradingbot.Engine.Cex
             {
                 Console.BackgroundColor = ConsoleColor.DarkRed;
                 Console.Write(
-                    $"{(!buyingReserveRequirementMatched ? $"Limited Reserve - {TradingStrategy.MinimumReservePercentageAfterInit:P2}" : buyingAmountInPrinciple > 0 ? $"Low Fund - Need {buyingAmountInPrinciple * buyingPriceInPrinciple:N2} {targetCurrencyBalance.Currency}" : "Low Fund")}");
+                    $"{(!buyingReserveRequirementMatched ? $"Limited Reserve - {TradingStrategy.MinimumReservePercentageAfterInit:P2}" : buyingAmountInPrinciple > 0 ? $"Low Fund - Need {(buyingAmountInPrinciple > targetCurrencyLimit ? buyingAmountInPrinciple : targetCurrencyLimit) * buyingPriceInPrinciple:N2} {targetCurrencyBalance.Currency}" : "Low Fund")}");
                 Console.ResetColor();
                 Console.Write("\t\t  ");
             }
@@ -678,7 +684,7 @@ namespace mleader.tradingbot.Engine.Cex
             {
                 Console.BackgroundColor = ConsoleColor.DarkRed;
                 Console.Write(
-                    $"{(!sellingReserveRequirementMatched ? $"Limited Reserve - {TradingStrategy.MinimumReservePercentageAfterInit:P2}" : sellingAmountInPrinciple > 0 ? $"Low Fund - Need {sellingAmountInPrinciple:N4} {exchangeCurrencyBalance.Currency}" : "Low Fund")}");
+                    $"{(!sellingReserveRequirementMatched ? $"Limited Reserve - {TradingStrategy.MinimumReservePercentageAfterInit:P2}" : sellingAmountInPrinciple > 0 ? $"Low Fund - Need {(sellingAmountInPrinciple > exchangeCurrencyLimit ? sellingAmountInPrinciple : exchangeCurrencyLimit):N4} {exchangeCurrencyBalance.Currency}" : "Low Fund")}");
                 Console.ResetColor();
                 Console.Write("\t\t\n");
             }
