@@ -60,7 +60,7 @@ namespace mleader.tradingbot.Engine.Cex
                 HoursOfPublicHistoryOrderForPurchaseDecision = 24,
                 HoursOfPublicHistoryOrderForSellDecision = 24,
                 MinimumReservePercentageAfterInit = 0.1m,
-                OrderCapPercentageAfterInit = 0.9m,
+                OrderCapPercentageAfterInit = 0.6m,
                 OrderCapPercentageOnInit = 0.25m,
                 AutoDecisionExecution = true
             };
@@ -80,7 +80,8 @@ namespace mleader.tradingbot.Engine.Cex
             RequestTimer = new System.Timers.Timer(1000) {Enabled = true, AutoReset = true};
             RequestTimer.Elapsed += (sender, args) =>
             {
-                if (ApiRequestCounts == 0) ApiRequestcrruedAllowance++;
+                ApiRequestCounts++;
+
                 if (ApiRequestCounts > ApiRequestcrruedAllowance)
                 {
                     if (ApiRequestCounts - ApiRequestcrruedAllowance > 0)
@@ -103,7 +104,9 @@ namespace mleader.tradingbot.Engine.Cex
 
         public async Task FirstBatchPreparationAsync()
         {
-            await GetAccountBalanceAsync();
+            var balance = await GetAccountBalanceAsync();
+            if (balance == null) return;
+
             await RefreshCexCurrencyLimitsAsync();
 
             var availableExchangeCurrencyBalance =
@@ -160,9 +163,16 @@ namespace mleader.tradingbot.Engine.Cex
                 if (SleepNeeded)
                 {
                     SleepNeeded = false;
-                    var count = ApiRequestCounts;
+                    var count = ApiRequestCounts - ApiRequestcrruedAllowance;
+                    count = count - ApiRequestcrruedAllowance;
                     ApiRequestCounts = 0;
-                    Thread.Sleep(count * 1000);
+
+                    ApiRequestcrruedAllowance = 0;
+                    if (count > 0)
+                    {
+                        count = count > 5 ? 5 : count;
+                        Thread.Sleep(count * 1000);
+                    }
                 }
 
                 try
@@ -172,7 +182,6 @@ namespace mleader.tradingbot.Engine.Cex
                 catch (Exception e)
                 {
                     Console.WriteLine(e.Message);
-                    throw;
                 }
 
                 Thread.Sleep(1000);
@@ -264,6 +273,37 @@ namespace mleader.tradingbot.Engine.Cex
                               new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds,
                 });
             ApiRequestCounts++;
+
+            if (latestAccountTradeHistories == null)
+            {
+                Console.WriteLine(await Rest.PostAsync<string>(
+                    $"archived_orders/{OperatingExchangeCurrency}/{OperatingTargetCurrency}", new
+                    {
+                        Key = ApiConfig.ApiKey,
+                        Signature = GetApiSignature(nonce),
+                        Nonce = nonce,
+                        DateFrom = (DateTime.UtcNow.AddHours(
+                                        -1 * (TradingStrategy.HoursOfAccountHistoryOrderForPurchaseDecision >
+                                              TradingStrategy.HoursOfAccountHistoryOrderForSellDecision
+                                            ? TradingStrategy.HoursOfAccountHistoryOrderForPurchaseDecision
+                                            : TradingStrategy.HoursOfAccountHistoryOrderForSellDecision)) -
+                                    new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds,
+                        DateTo = (DateTime.UtcNow.AddHours(
+                                      (TradingStrategy.HoursOfAccountHistoryOrderForPurchaseDecision >
+                                       TradingStrategy.HoursOfAccountHistoryOrderForSellDecision
+                                          ? TradingStrategy.HoursOfAccountHistoryOrderForPurchaseDecision
+                                          : TradingStrategy.HoursOfAccountHistoryOrderForSellDecision)) -
+                                  new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds,
+                    }));
+
+                Console.WriteLine("\n [Unable to receive account records] - Carrying 3 seconds sleep...");
+
+                Thread.Sleep(3000);
+                ApiRequestcrruedAllowance = 0;
+                ApiRequestCounts = 0;
+                return false;
+            }
+
             if (latestAccountTradeHistories?.Count > 0)
             {
                 LatestAccountPurchaseHistory = latestAccountTradeHistories
@@ -292,8 +332,28 @@ namespace mleader.tradingbot.Engine.Cex
             #endregion
 
             await RefreshAccountFeesAsync();
-            await GetAccountBalanceAsync();
-            await GetOpenOrdersAsync();
+            AccountBalance = await GetAccountBalanceAsync();
+            if (AccountBalance == null)
+            {
+                Console.WriteLine("\n [Unable to receive account balance] - Carrying 3 seconds sleep...");
+
+                Thread.Sleep(3000);
+                ApiRequestcrruedAllowance = 0;
+                ApiRequestCounts = 0;
+                return false;
+            }
+
+            AccountOpenOrders = await GetOpenOrdersAsync();
+            if (AccountOpenOrders == null)
+            {
+                Console.WriteLine("\n [Unable to receive account open orders] - Carrying 3 seconds sleep...");
+
+                Thread.Sleep(3000);
+                ApiRequestcrruedAllowance = 0;
+                ApiRequestCounts = 0;
+                return false;
+            }
+
             try
             {
                 await DrawDecisionUIsAsync();
@@ -301,7 +361,9 @@ namespace mleader.tradingbot.Engine.Cex
             catch (Exception ex)
             {
                 Console.Clear();
-
+            }
+            finally
+            {
                 if (InitialBatchCycles > 0)
                     InitialBatchCycles--;
             }
@@ -343,20 +405,29 @@ namespace mleader.tradingbot.Engine.Cex
         public Task<decimal> GetSellingPriceInPrincipleAsync() => Task.FromResult(Math.Floor(ProposedSellingPrice *
                                                                                              (1 +
                                                                                               BuyingFeeInPercentage +
-                                                                                              AverageTradingChangeRatio *
+                                                                                              AverageTradingChangeRatio /
+                                                                                              2 *
                                                                                               (IsPublicUpTrending
                                                                                                   ? 1
                                                                                                   : -1)) +
                                                                                              BuyingFeeInAmount));
 
+//        public Task<decimal> GetPurchasePriceInPrincipleAsync() => Task.FromResult(Math.Floor(ProposedPurchasePrice *
+//                                                                                              (1 -
+//                                                                                               BuyingFeeInPercentage +
+//                                                                                               AverageTradingChangeRatio *
+//                                                                                               (IsPublicUpTrending
+//                                                                                                   ? 1
+//                                                                                                   : -1)) +
+//                                                                                              BuyingFeeInAmount));
+
         public Task<decimal> GetPurchasePriceInPrincipleAsync() => Task.FromResult(Math.Floor(ProposedPurchasePrice *
-                                                                                              (1 -
-                                                                                               BuyingFeeInPercentage +
-                                                                                               AverageTradingChangeRatio *
+                                                                                              (1 +
+                                                                                               AverageTradingChangeRatio /
+                                                                                               2 *
                                                                                                (IsPublicUpTrending
-                                                                                                   ? 1
-                                                                                                   : -1)) +
-                                                                                              BuyingFeeInAmount));
+                                                                                                   ? -1
+                                                                                                   : 1))));
 
         public async Task<AccountBalance> GetAccountBalanceAsync()
         {
@@ -383,8 +454,6 @@ namespace mleader.tradingbot.Engine.Cex
             var targetCurrencyBalance = AccountBalance?.CurrencyBalances
                 ?.Where(item => item.Key == OperatingTargetCurrency)
                 .Select(item => item.Value).FirstOrDefault();
-
-            if (exchangeCurrencyBalance == null || targetCurrencyBalance == null) return;
 
             bool buyingAmountAvailable = true,
                 sellingAmountAvailable = true,
@@ -568,7 +637,7 @@ namespace mleader.tradingbot.Engine.Cex
                 {
                     Console.BackgroundColor = ConsoleColor.DarkGreen;
                     Console.Write(
-                        $"SELL {sellingAmountInPrinciple} {exchangeCurrencyBalance?.Currency} ({Math.Round(sellingAmountInPrinciple / sellingPriceInPrinciple, 2)} {targetCurrencyBalance?.Currency})");
+                        $"SELL {sellingAmountInPrinciple} {exchangeCurrencyBalance?.Currency} ({Math.Round(sellingAmountInPrinciple * sellingPriceInPrinciple, 2)} {targetCurrencyBalance?.Currency})");
                     Console.ResetColor();
                     Console.Write("\n");
                 }
@@ -690,6 +759,8 @@ namespace mleader.tradingbot.Engine.Cex
                         Console.ResetColor();
                         SendWebhookMessage(
                             $" :smile: *[BUY]* Order {order.OrderId} Executed: {order.Amount} {OperatingExchangeCurrency} at {order.Price} per {OperatingExchangeCurrency}");
+                        Thread.Sleep(1000);
+                        ApiRequestcrruedAllowance++;
                     }
                 }
             }
@@ -777,6 +848,8 @@ namespace mleader.tradingbot.Engine.Cex
                         Console.ResetColor();
                         SendWebhookMessage(
                             $" :moneybag: *[SELL]* Order {order.OrderId} Executed: {order.Amount} {OperatingExchangeCurrency} at {order.Price} per {OperatingExchangeCurrency}");
+                        Thread.Sleep(1000);
+                        ApiRequestcrruedAllowance++;
                     }
                 }
             }
@@ -829,14 +902,6 @@ namespace mleader.tradingbot.Engine.Cex
 
         private long GetNonce()
         {
-            if (!SleepNeeded)
-                return Convert.ToInt64(Math.Truncate((DateTime.UtcNow - DateTime.MinValue).TotalMilliseconds));
-
-            SleepNeeded = false;
-            var count = ApiRequestCounts;
-            ApiRequestCounts = 0;
-            Thread.Sleep(count * 1000);
-
             return Convert.ToInt64(Math.Truncate((DateTime.UtcNow - DateTime.MinValue).TotalMilliseconds));
         }
 
@@ -878,7 +943,7 @@ namespace mleader.tradingbot.Engine.Cex
         #region Staging Calculations
 
         private decimal PublicUpLevelSell1 =>
-            Math.Abs(PublicWeightedAverageBestSellPrice - AccountWeightedAverageSellPrice) /
+            Math.Abs(PublicWeightedAverageBestSellPrice - PublicWeightedAverageSellPrice) /
             PublicWeightedAverageSellPrice;
 
         private decimal PublicUpLevelSell2 =>
@@ -896,10 +961,10 @@ namespace mleader.tradingbot.Engine.Cex
         #endregion
 
         /// <summary>
-        /// Is market price going up: [PublicUpLevelPurchase1] >= [PublicUpLevelSell1] && [PublicUpLevelPurchase2] <= [PublicUpLevelPurchase2]
+        /// Is market price going up: buying amount > selling amount
         /// </summary>
-        private bool IsPublicUpTrending => PublicUpLevelPurchase1 >= PublicUpLevelSell1 &&
-                                           PublicUpLevelPurchase2 <= PublicUpLevelPurchase2;
+        private bool IsPublicUpTrending => LatestPublicPurchaseHistory?.Sum(item => item.Amount) >
+                                           LatestPublicSaleHistory?.Sum(item => item.Amount);
 
         /// <summary>
         /// Find the last X records of public sale prices and do a weighted average
@@ -1086,17 +1151,19 @@ namespace mleader.tradingbot.Engine.Cex
         {
             new[]
             {
-                PublicWeightedAverageSellPrice, PublicLastSellPrice,
+                PublicWeightedAverageSellPrice,
+                PublicLastSellPrice,
                 AccountWeightedAveragePurchasePrice,
                 AccountLastPurchasePrice,
                 AccountLastSellPrice,
-                AccountWeightedAverageSellPrice
+                AccountWeightedAverageSellPrice,
+                (PublicLastSellPrice + AccountLastSellPrice) / 2,
+                (AccountLastPurchasePrice + AccountLastSellPrice) / 2
             }.Average(),
             PublicLastSellPrice,
-            AccountLastSellPrice,
             (PublicLastSellPrice + AccountLastSellPrice) / 2,
-            AccountLastPurchasePrice
-        }.Max();
+            (AccountLastPurchasePrice + AccountLastSellPrice) / 2
+        }.Average();
 
         /// <summary>
         /// [ProposedPurchasePrice] = MIN(AVG([PublicWeightedAveragePurchasePrice],[PublicLastPurchasePrice], [PublicWeightedAverageBestPurchasePrice], [AccountWeightedAverageSellPrice]), [PublicLastPurchasePrice])
@@ -1107,11 +1174,14 @@ namespace mleader.tradingbot.Engine.Cex
             new[]
             {
                 PublicWeightedAveragePurchasePrice, PublicLastPurchasePrice, PublicWeightedAverageBestPurchasePrice,
-                AccountWeightedAverageSellPrice, AccountLastPurchasePrice
+                AccountWeightedAverageSellPrice, AccountLastPurchasePrice,
+                (PublicLastPurchasePrice + AccountLastPurchasePrice) / 2,
+                (AccountLastSellPrice + AccountLastPurchasePrice) / 2
             }.Average(),
             PublicLastPurchasePrice,
-            AccountLastPurchasePrice
-        }.Average();
+            (PublicLastPurchasePrice + AccountLastPurchasePrice) / 2,
+            (AccountLastSellPrice + AccountLastPurchasePrice) / 2
+        }.Min();
 
         #endregion
 
