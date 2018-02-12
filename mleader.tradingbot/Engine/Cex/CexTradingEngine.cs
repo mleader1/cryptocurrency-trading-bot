@@ -55,15 +55,15 @@ namespace mleader.tradingbot.Engine.Cex
             OperatingTargetCurrency = targetCurrency;
             TradingStrategy = strategy ?? new TradingStrategy
             {
-                HoursOfAccountHistoryOrderForPurchaseDecision = 24,
-                HoursOfAccountHistoryOrderForSellDecision = 24,
-                HoursOfPublicHistoryOrderForPurchaseDecision = 24,
-                HoursOfPublicHistoryOrderForSellDecision = 24,
+                MinutesOfAccountHistoryOrderForPurchaseDecision = 60,
+                MinutesOfAccountHistoryOrderForSellDecision = 60,
+                MinutesOfPublicHistoryOrderForPurchaseDecision = 120,
+                MinutesOfPublicHistoryOrderForSellDecision = 120,
                 MinimumReservePercentageAfterInit = 0.1m,
                 OrderCapPercentageAfterInit = 0.6m,
                 OrderCapPercentageOnInit = 0.25m,
                 AutoDecisionExecution = true,
-                MarketChangeSensitivityRatio = 0.1m
+                MarketChangeSensitivityRatio = 0.03m
             };
 
             AutoExecution = TradingStrategy.AutoDecisionExecution;
@@ -213,27 +213,27 @@ namespace mleader.tradingbot.Engine.Cex
             var error = false;
             if (latestThousandTradeHistories?.Count > 0)
             {
-                var lastXHours =
-                    latestThousandTradeHistories.Where(item => item.Timestamp >= DateTime.UtcNow.AddHours(-1 * (
-                                                                                                              TradingStrategy
-                                                                                                                  .HoursOfPublicHistoryOrderForPurchaseDecision >
-                                                                                                              TradingStrategy
-                                                                                                                  .HoursOfPublicHistoryOrderForSellDecision
-                                                                                                                  ? TradingStrategy
-                                                                                                                      .HoursOfPublicHistoryOrderForPurchaseDecision
-                                                                                                                  : TradingStrategy
-                                                                                                                      .HoursOfPublicHistoryOrderForSellDecision
-                                                                                                          )));
+                var lastXMinutes =
+                    latestThousandTradeHistories.Where(item => item.Timestamp >= DateTime.UtcNow.AddMinutes(-1 * (
+                                                                                                                TradingStrategy
+                                                                                                                    .MinutesOfPublicHistoryOrderForPurchaseDecision >
+                                                                                                                TradingStrategy
+                                                                                                                    .MinutesOfPublicHistoryOrderForSellDecision
+                                                                                                                    ? TradingStrategy
+                                                                                                                        .MinutesOfPublicHistoryOrderForPurchaseDecision
+                                                                                                                    : TradingStrategy
+                                                                                                                        .MinutesOfPublicHistoryOrderForSellDecision
+                                                                                                            )));
 
 
-                LatestPublicPurchaseHistory = lastXHours
+                LatestPublicPurchaseHistory = lastXMinutes
                     .Where(item => item.OrderType == OrderType.Buy && item.Timestamp >=
-                                   DateTime.UtcNow.AddHours(
-                                       -1 * TradingStrategy.HoursOfPublicHistoryOrderForPurchaseDecision))
+                                   DateTime.UtcNow.AddMinutes(
+                                       -1 * TradingStrategy.MinutesOfPublicHistoryOrderForPurchaseDecision))
                     .Select(item => item as ITradeHistory).ToList();
-                LatestPublicSaleHistory = lastXHours.Where(item =>
+                LatestPublicSaleHistory = lastXMinutes.Where(item =>
                         item.OrderType == OrderType.Sell && item.Timestamp >=
-                        DateTime.UtcNow.AddHours(-1 * TradingStrategy.HoursOfPublicHistoryOrderForSellDecision))
+                        DateTime.UtcNow.AddMinutes(-1 * TradingStrategy.MinutesOfPublicHistoryOrderForSellDecision))
                     .Select(item => item as ITradeHistory).ToList();
             }
             else
@@ -261,16 +261,17 @@ namespace mleader.tradingbot.Engine.Cex
                     Key = ApiConfig.ApiKey,
                     Signature = GetApiSignature(nonce),
                     Nonce = nonce,
-                    DateFrom = (DateTime.UtcNow.AddHours(
-                                    -1 * (TradingStrategy.HoursOfAccountHistoryOrderForPurchaseDecision >
-                                          TradingStrategy.HoursOfAccountHistoryOrderForSellDecision
-                                        ? TradingStrategy.HoursOfAccountHistoryOrderForPurchaseDecision
-                                        : TradingStrategy.HoursOfAccountHistoryOrderForSellDecision)) -
+                    DateFrom = (DateTime.UtcNow.AddMinutes(
+                                    -1 * (TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision >
+                                          TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision
+                                        ? TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision
+                                        : TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision)) -
                                 new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds,
-                    DateTo = (DateTime.UtcNow.AddHours((TradingStrategy.HoursOfAccountHistoryOrderForPurchaseDecision >
-                                                        TradingStrategy.HoursOfAccountHistoryOrderForSellDecision
-                                  ? TradingStrategy.HoursOfAccountHistoryOrderForPurchaseDecision
-                                  : TradingStrategy.HoursOfAccountHistoryOrderForSellDecision)) -
+                    DateTo = (DateTime.UtcNow.AddMinutes(
+                                  (TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision >
+                                   TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision
+                                      ? TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision
+                                      : TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision)) -
                               new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds,
                 });
             ApiRequestCounts++;
@@ -283,17 +284,17 @@ namespace mleader.tradingbot.Engine.Cex
                         Key = ApiConfig.ApiKey,
                         Signature = GetApiSignature(nonce),
                         Nonce = nonce,
-                        DateFrom = (DateTime.UtcNow.AddHours(
-                                        -1 * (TradingStrategy.HoursOfAccountHistoryOrderForPurchaseDecision >
-                                              TradingStrategy.HoursOfAccountHistoryOrderForSellDecision
-                                            ? TradingStrategy.HoursOfAccountHistoryOrderForPurchaseDecision
-                                            : TradingStrategy.HoursOfAccountHistoryOrderForSellDecision)) -
+                        DateFrom = (DateTime.UtcNow.AddMinutes(
+                                        -1 * (TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision >
+                                              TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision
+                                            ? TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision
+                                            : TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision)) -
                                     new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds,
-                        DateTo = (DateTime.UtcNow.AddHours(
-                                      (TradingStrategy.HoursOfAccountHistoryOrderForPurchaseDecision >
-                                       TradingStrategy.HoursOfAccountHistoryOrderForSellDecision
-                                          ? TradingStrategy.HoursOfAccountHistoryOrderForPurchaseDecision
-                                          : TradingStrategy.HoursOfAccountHistoryOrderForSellDecision)) -
+                        DateTo = (DateTime.UtcNow.AddMinutes(
+                                      (TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision >
+                                       TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision
+                                          ? TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision
+                                          : TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision)) -
                                   new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds,
                     }));
 
@@ -309,13 +310,13 @@ namespace mleader.tradingbot.Engine.Cex
             {
                 LatestAccountPurchaseHistory = latestAccountTradeHistories
                     .Where(item => item.Type == OrderType.Buy && item.Timestamp >=
-                                   DateTime.UtcNow.AddHours(
-                                       -1 * TradingStrategy.HoursOfAccountHistoryOrderForPurchaseDecision))
+                                   DateTime.UtcNow.AddMinutes(
+                                       -1 * TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision))
                     .Select(item => item as IOrder).ToList();
                 LatestAccountSaleHistory = latestAccountTradeHistories
                     .Where(item => item.Type == OrderType.Sell && item.Timestamp >=
-                                   DateTime.UtcNow.AddHours(
-                                       -1 * TradingStrategy.HoursOfAccountHistoryOrderForSellDecision))
+                                   DateTime.UtcNow.AddMinutes(
+                                       -1 * TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision))
                     .Select(item => item as IOrder).ToList();
             }
             else
@@ -460,10 +461,10 @@ namespace mleader.tradingbot.Engine.Cex
             if (InitialBatchCycles > 0)
             {
                 buyingAmountInPrinciple =
-                    (TradingStrategy.OrderCapPercentageOnInit * targetCurrencyBalance?.Available)
+                    (TradingStrategy.OrderCapPercentageOnInit * targetCurrencyBalance?.Total)
                     .GetValueOrDefault() / buyingPriceInPrinciple;
                 sellingAmountInPrinciple = (TradingStrategy.OrderCapPercentageOnInit *
-                                            exchangeCurrencyBalance?.Available).GetValueOrDefault();
+                                            exchangeCurrencyBalance?.Total).GetValueOrDefault();
                 buyingAmountInPrinciple = buyingAmountInPrinciple > InitialBuyingCap / buyingPriceInPrinciple
                     ? InitialBuyingCap / buyingPriceInPrinciple
                     : buyingAmountInPrinciple;
@@ -474,10 +475,10 @@ namespace mleader.tradingbot.Engine.Cex
             else
             {
                 buyingAmountInPrinciple =
-                    (TradingStrategy.OrderCapPercentageAfterInit * targetCurrencyBalance?.Available)
+                    (TradingStrategy.OrderCapPercentageAfterInit * targetCurrencyBalance?.Total)
                     .GetValueOrDefault() / buyingPriceInPrinciple;
                 sellingAmountInPrinciple = (TradingStrategy.OrderCapPercentageAfterInit *
-                                            exchangeCurrencyBalance?.Available).GetValueOrDefault();
+                                            exchangeCurrencyBalance?.Total).GetValueOrDefault();
             }
 
             var exchangeCurrencyLimit = ExchangeCurrencyLimit?.MinimumExchangeAmount > 0
@@ -498,13 +499,18 @@ namespace mleader.tradingbot.Engine.Cex
             sellingAmountAvailable = sellingAmountInPrinciple > 0 &&
                                      sellingAmountInPrinciple <= exchangeCurrencyBalance?.Available;
             buyingReserveRequirementMatched = targetCurrencyBalance?.Total <= 0 ||
-                                              (1 - buyingAmountInPrinciple * buyingPriceInPrinciple /
-                                               targetCurrencyBalance?.Total) >=
-                                              TradingStrategy.MinimumReservePercentageAfterInit;
+                                              (targetCurrencyBalance?.Total > buyingAmountInPrinciple &&
+                                               (targetCurrencyBalance.Available -
+                                                buyingAmountInPrinciple * buyingPriceInPrinciple) /
+                                               (targetCurrencyBalance.Total -
+                                                buyingAmountInPrinciple * buyingPriceInPrinciple) >=
+                                               TradingStrategy.MinimumReservePercentageAfterInit);
+
             sellingReserveRequirementMatched = exchangeCurrencyBalance?.Total <= 0 ||
-                                               (1 - sellingAmountInPrinciple /
-                                                exchangeCurrencyBalance?.Total) >= TradingStrategy
-                                                   .MinimumReservePercentageAfterInit;
+                                               (exchangeCurrencyBalance?.Total > sellingAmountInPrinciple &&
+                                                (exchangeCurrencyBalance.Available - sellingAmountInPrinciple) /
+                                                (exchangeCurrencyBalance.Total - sellingAmountInPrinciple) >=
+                                                TradingStrategy.MinimumReservePercentageAfterInit);
 
             while (!buyingReserveRequirementMatched && buyingAmountInPrinciple > exchangeCurrencyLimit &&
                    buyingAmountAvailable)
@@ -602,7 +608,7 @@ namespace mleader.tradingbot.Engine.Cex
                 {
                     Console.BackgroundColor = ConsoleColor.DarkGreen;
                     Console.Write(
-                        $"BUY {buyingAmountInPrinciple} {exchangeCurrencyBalance?.Currency} ({buyingAmountInPrinciple * buyingPriceInPrinciple} {targetCurrencyBalance?.Currency})");
+                        $"BUY {buyingAmountInPrinciple} {exchangeCurrencyBalance?.Currency} ({buyingAmountInPrinciple * buyingPriceInPrinciple:N2} {targetCurrencyBalance?.Currency})");
                     Console.ResetColor();
                     Console.Write("\t\t  ");
                 }
@@ -1189,8 +1195,6 @@ namespace mleader.tradingbot.Engine.Cex
                 ReasonableAccountWeightedAveragePurchasePrice,
                 ReasonableAccountLastPurchasePrice,
                 PublicWeightedAverageBestPurchasePrice,
-                PublicWeightedAverageLowPurchasePrice,
-                ReasonableAccountLastPurchasePrice,
                 (PublicLastPurchasePrice + ReasonableAccountLastPurchasePrice) / 2,
                 (ReasonableAccountLastSellPrice + ReasonableAccountLastPurchasePrice) / 2,
                 ReasonableAccountLastPurchasePrice * (1 + AverageTradingChangeRatio * (IsPublicUpTrending ? 1 : -1))
@@ -1202,27 +1206,33 @@ namespace mleader.tradingbot.Engine.Cex
 
         private decimal ReasonableAccountLastPurchasePrice =>
             Math.Abs(AccountLastPurchasePrice - PublicLastPurchasePrice) /
-            Math.Min(PublicLastPurchasePrice, AccountLastPurchasePrice) >
+            Math.Min(PublicLastPurchasePrice,
+                AccountLastPurchasePrice > 0 ? AccountLastPurchasePrice : PublicLastPurchasePrice) >
             TradingStrategy.MarketChangeSensitivityRatio
                 ? PublicLastPurchasePrice
                 : AccountLastPurchasePrice;
 
         private decimal ReasonableAccountLastSellPrice =>
-            Math.Abs(AccountLastSellPrice - PublicLastSellPrice) / Math.Min(PublicLastSellPrice, AccountLastSellPrice) >
+            Math.Abs(AccountLastSellPrice - PublicLastSellPrice) / Math.Min(PublicLastSellPrice,
+                AccountLastSellPrice > 0 ? AccountLastSellPrice : PublicLastSellPrice) >
             TradingStrategy.MarketChangeSensitivityRatio
                 ? PublicLastSellPrice
                 : AccountLastSellPrice;
 
         private decimal ReasonableAccountWeightedAverageSellPrice =>
             Math.Abs(AccountWeightedAverageSellPrice - PublicLastSellPrice) /
-            Math.Min(AccountWeightedAverageSellPrice, PublicLastSellPrice) >
+            Math.Min(AccountWeightedAverageSellPrice > 0 ? AccountWeightedAverageSellPrice : PublicLastSellPrice,
+                PublicLastSellPrice) >
             TradingStrategy.MarketChangeSensitivityRatio
                 ? PublicLastSellPrice
                 : AccountWeightedAverageSellPrice;
 
         private decimal ReasonableAccountWeightedAveragePurchasePrice =>
             Math.Abs(AccountWeightedAveragePurchasePrice - PublicLastPurchasePrice) /
-            Math.Min(PublicLastPurchasePrice, AccountWeightedAveragePurchasePrice) >
+            Math.Min(PublicLastPurchasePrice,
+                AccountWeightedAveragePurchasePrice > 0
+                    ? AccountWeightedAveragePurchasePrice
+                    : PublicLastPurchasePrice) >
             TradingStrategy.MarketChangeSensitivityRatio
                 ? PublicLastPurchasePrice
                 : AccountWeightedAveragePurchasePrice;

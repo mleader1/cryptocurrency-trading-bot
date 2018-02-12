@@ -89,25 +89,25 @@ namespace mleader.tradingbot
                 Console.ResetColor();
             }
 
-            Console.WriteLine("Hours of historical orders on CEX.IO for buying considerations: (default 24)");
+            Console.WriteLine("Minutes of historical orders on CEX.IO for buying considerations: (default 60)");
             var publicOrderHistoryForBuyingDecision = NumericUtils.GetIntegerValueFromObject(Console.ReadLine());
-            if (publicOrderHistoryForBuyingDecision <= 0) publicOrderHistoryForBuyingDecision = 24;
+            if (publicOrderHistoryForBuyingDecision <= 0) publicOrderHistoryForBuyingDecision = 60;
 
-            Console.WriteLine("Hours of historical orders on CEX.IO for selling considerations: (default 24)");
+            Console.WriteLine("Minutes of historical orders on CEX.IO for selling considerations: (default 60)");
             var publicOrderHistoryForSellingDecision = NumericUtils.GetIntegerValueFromObject(Console.ReadLine());
-            if (publicOrderHistoryForSellingDecision <= 0) publicOrderHistoryForSellingDecision = 24;
+            if (publicOrderHistoryForSellingDecision <= 0) publicOrderHistoryForSellingDecision = 60;
 
-            Console.WriteLine("Hours of historical account orders for buying considerations: (default 24)");
+            Console.WriteLine("Minutes of historical account orders for buying considerations: (default 120)");
             var accountOrderHistoryForBuyingDecision = NumericUtils.GetIntegerValueFromObject(Console.ReadLine());
-            if (accountOrderHistoryForBuyingDecision <= 0) accountOrderHistoryForBuyingDecision = 24;
+            if (accountOrderHistoryForBuyingDecision <= 0) accountOrderHistoryForBuyingDecision = 120;
 
-            Console.WriteLine("Hours of historical account orders for selling considerations: (default 24)");
+            Console.WriteLine("Minutes of historical account orders for selling considerations: (default 120)");
             var accountOrderHistoryForSellingDecision = NumericUtils.GetIntegerValueFromObject(Console.ReadLine());
-            if (accountOrderHistoryForSellingDecision <= 0) accountOrderHistoryForSellingDecision = 24;
+            if (accountOrderHistoryForSellingDecision <= 0) accountOrderHistoryForSellingDecision = 120;
 
-            Console.WriteLine("Market change sensitivity ratio in decimal: (default 0.10)");
+            Console.WriteLine("Minutes change sensitivity ratio in decimal: (default 0.03)");
             var sensitivityRatio = NumericUtils.GetDecimalValueFromObject(Console.ReadLine());
-            if (sensitivityRatio <= 0) sensitivityRatio = 0.10m;
+            if (sensitivityRatio <= 0) sensitivityRatio = 0.03m;
 
             bool autoExecution;
             Console.ForegroundColor = ConsoleColor.White;
@@ -119,10 +119,10 @@ namespace mleader.tradingbot
 
             var tradingStrategy = new TradingStrategy
             {
-                HoursOfAccountHistoryOrderForPurchaseDecision = accountOrderHistoryForBuyingDecision,
-                HoursOfAccountHistoryOrderForSellDecision = accountOrderHistoryForSellingDecision,
-                HoursOfPublicHistoryOrderForPurchaseDecision = publicOrderHistoryForBuyingDecision,
-                HoursOfPublicHistoryOrderForSellDecision = publicOrderHistoryForSellingDecision,
+                MinutesOfAccountHistoryOrderForPurchaseDecision = accountOrderHistoryForBuyingDecision,
+                MinutesOfAccountHistoryOrderForSellDecision = accountOrderHistoryForSellingDecision,
+                MinutesOfPublicHistoryOrderForPurchaseDecision = publicOrderHistoryForBuyingDecision,
+                MinutesOfPublicHistoryOrderForSellDecision = publicOrderHistoryForSellingDecision,
                 MinimumReservePercentageAfterInit = 0.1m,
                 OrderCapPercentageAfterInit = 0.6m,
                 OrderCapPercentageOnInit = 0.25m,

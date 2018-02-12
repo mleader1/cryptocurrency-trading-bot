@@ -30,25 +30,25 @@ namespace mleader.tradingbot.Engine
         /// When buying, history order transaction prices in each order on the exchange will be evaluated.
         /// Set this number for the engine to calculate the buying price 
         /// </summary>
-        int HoursOfPublicHistoryOrderForPurchaseDecision { get; set; }
+        int MinutesOfPublicHistoryOrderForPurchaseDecision { get; set; }
 
         /// <summary>
         /// When buying, history order transaction prices in each purchase made in the past will be evaluated.
         /// Set this number for the engine to calculate the buying price 
         /// </summary>
-        int HoursOfAccountHistoryOrderForPurchaseDecision { get; set; }
+        int MinutesOfAccountHistoryOrderForPurchaseDecision { get; set; }
 
         /// <summary>
         /// When selling, history order transaction prices in each order on the exchange will be evaluated.
         /// Set this number of the engine to calculate the selling price
         /// </summary>
-        int HoursOfPublicHistoryOrderForSellDecision { get; set; }
+        int MinutesOfPublicHistoryOrderForSellDecision { get; set; }
 
         /// <summary>
         /// When selling, history order transaction prices in each sale made in the past will be evaluated.
         /// Set this nuber for the engine to calculate the sellig price 
         /// </summary>
-        int HoursOfAccountHistoryOrderForSellDecision { get; set; }
+        int MinutesOfAccountHistoryOrderForSellDecision { get; set; }
 
         /// <summary>
         /// execute decisions (buy/sell) automatically without human intervention
