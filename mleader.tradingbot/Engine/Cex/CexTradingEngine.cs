@@ -789,7 +789,7 @@ namespace mleader.tradingbot.Engine.Cex
                             $" [BUY] Order {order.OrderId} Executed: {order.Amount} {OperatingExchangeCurrency} at {order.Price} per {OperatingExchangeCurrency}");
                         Console.ResetColor();
                         SendWebhookMessage(
-                            $" :smile: *[BUY]* Order {order.OrderId} \n" +
+                            $" :smile: *[BUY]* Order {order.OrderId} - {order.Timestamp}\n" +
                             $" *Executed:* {order.Amount} {OperatingExchangeCurrency} \n" +
                             $" *Price:* {order.Price} {OperatingTargetCurrency}\n" +
                             $" *Cost:* {order.Amount * order.Price} {OperatingTargetCurrency}\n" +
@@ -885,7 +885,7 @@ namespace mleader.tradingbot.Engine.Cex
                         SendWebhookMessage(
                             $" :moneybag: *[SELL]* Order {order.OrderId} Executed: {order.Amount} {OperatingExchangeCurrency} at {order.Price} per {OperatingExchangeCurrency}");
                         SendWebhookMessage(
-                            $" :moneybag: *[SELL]* Order {order.OrderId} \n" +
+                            $" :moneybag: *[SELL]* Order {order.OrderId}  - {order.Timestamp}\n" +
                             $" *Executed:* {order.Amount} {OperatingExchangeCurrency} \n" +
                             $" *Price:* {order.Price} {OperatingTargetCurrency}\n" +
                             $" *Cost:* {order.Amount * order.Price} {OperatingTargetCurrency}\n" +
