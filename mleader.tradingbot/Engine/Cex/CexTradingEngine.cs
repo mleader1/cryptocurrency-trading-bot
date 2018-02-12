@@ -1207,7 +1207,7 @@ namespace mleader.tradingbot.Engine.Cex
         /// Is market price going up: buying amount > selling amount
         /// </summary>
         private bool IsPublicUpTrending => LatestPublicPurchaseHistory?.Sum(item => item.Amount) >
-                                           LatestPublicSaleHistory?.Sum(item => item.Amount) ||
+                                           LatestPublicSaleHistory?.Sum(item => item.Amount) &&
                                            (CurrentOrderbook != null &&
                                             CurrentOrderbook.BuyTotal > CurrentOrderbook.SellTotal);
 
@@ -1414,15 +1414,14 @@ namespace mleader.tradingbot.Engine.Cex
                                                    ReasonableAccountWeightedAverageSellPrice,
                                                    PublicWeightedAverageBestSellPrice,
                                                    PublicWeightedAverageLowSellPrice,
-                                                   //(PublicLastSellPrice + ReasonableAccountLastSellPrice) / 2,
-                                                   PublicLastSellPrice *
-                                                   (1 + AverageTradingChangeRatio * (IsPublicUpTrending ? 1 : -1)),
                                                    orderbookValuatedPrice
                                                }.Average(),
                                                orderbookValuatedPrice
 //                    (PublicLastSellPrice + ReasonableAccountLastSellPrice + ReasonableAccountLastPurchasePrice) / 3,
 //                    (ReasonableAccountLastSellPrice + orderbookValuatedPrice) / 2
-                                           ) * (1 + AverageTradingChangeRatio * (IsPublicUpTrending ? 1 : -1));
+                                           ) * (1 + Math.Min(AverageTradingChangeRatio,
+                                                    TradingStrategy.MarketChangeSensitivityRatio) *
+                                                (IsPublicUpTrending ? 1 : -1));
 
                 orderbookPriorityAsks = CurrentOrderbook?.Asks?.Where(i => i[0] <= proposedSellingPrice);
                 var exchangeCurrencyBalance =
@@ -1440,9 +1439,10 @@ namespace mleader.tradingbot.Engine.Cex
                 foreach (var order in orderbookPriorityAsks)
                 {
                     var portfolioValueBasedOnOrder =
-                        exchangeCurrencyBalance.Total * order[0] + targetCurrencyBalance.Total;
+                        exchangeCurrencyBalance.Total * Math.Ceiling(order[0] * (1 - SellingFeeInPercentage) -
+                                                                     SellingFeeInAmount) + targetCurrencyBalance.Total;
                     //i.e. still make a profit
-                    if (portfolioValueBasedOnOrder >= currentPortfolioValue) return order[0];
+                    if (portfolioValueBasedOnOrder > currentPortfolioValue) return order[0];
                 }
 
 
@@ -1477,16 +1477,15 @@ namespace mleader.tradingbot.Engine.Cex
                                                     ReasonableAccountWeightedAveragePurchasePrice,
                                                     PublicWeightedAverageBestPurchasePrice,
                                                     PublicWeightedAverageLowPurchasePrice,
-                                                    //(PublicLastPurchasePrice + ReasonableAccountLastPurchasePrice) / 2,
-                                                    PublicLastPurchasePrice *
-                                                    (1 + AverageTradingChangeRatio * (IsPublicUpTrending ? 1 : -1)),
                                                     orderbookValuatedPrice
                                                 }.Average(),
                                                 orderbookValuatedPrice
 //                    (PublicLastPurchasePrice + ReasonableAccountLastPurchasePrice + ReasonableAccountLastSellPrice +
 //                     PublicLastSellPrice) / 4,
 //                    (ReasonableAccountLastPurchasePrice + orderbookValuatedPrice) / 2
-                                            ) * (1 + AverageTradingChangeRatio * (IsPublicUpTrending ? 1 : -1));
+                                            ) * (1 + Math.Min(AverageTradingChangeRatio,
+                                                     TradingStrategy.MarketChangeSensitivityRatio) *
+                                                 (IsPublicUpTrending ? -1 : 1));
 
                 orderbookPriorityBids = CurrentOrderbook?.Bids?.Where(i => i[0] >= proposedPurchasePrice);
                 var exchangeCurrencyBalance =
@@ -1498,15 +1497,18 @@ namespace mleader.tradingbot.Engine.Cex
 
                 if (!(orderbookPriorityBids?.Count() > 0) || exchangeCurrencyBalance == null ||
                     targetCurrencyBalance == null) return proposedPurchasePrice;
+
                 var currentPortfolioValue =
-                    exchangeCurrencyBalance.Total * PublicLastSellPrice + targetCurrencyBalance.Total;
+                    exchangeCurrencyBalance.Total * PublicLastPurchasePrice + targetCurrencyBalance.Total;
 
                 foreach (var order in orderbookPriorityBids)
                 {
                     var portfolioValueBasedOnOrder =
-                        exchangeCurrencyBalance.Total * order[0] + targetCurrencyBalance.Total;
+                        exchangeCurrencyBalance.Total *
+                        Math.Floor(order[0] * (1 - BuyingFeeInPercentage) - BuyingFeeInAmount)
+                        + targetCurrencyBalance.Total;
                     //i.e. still make a profit
-                    if (portfolioValueBasedOnOrder >= currentPortfolioValue) return order[0];
+                    if (portfolioValueBasedOnOrder > currentPortfolioValue) return order[0];
                 }
 
                 return proposedPurchasePrice;
