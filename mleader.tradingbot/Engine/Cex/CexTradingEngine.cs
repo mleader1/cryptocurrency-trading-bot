@@ -62,7 +62,8 @@ namespace mleader.tradingbot.Engine.Cex
                 MinimumReservePercentageAfterInit = 0.1m,
                 OrderCapPercentageAfterInit = 0.6m,
                 OrderCapPercentageOnInit = 0.25m,
-                AutoDecisionExecution = true
+                AutoDecisionExecution = true,
+                MarketChangeSensitivityRatio = 0.25m
             };
 
             AutoExecution = TradingStrategy.AutoDecisionExecution;
@@ -412,22 +413,16 @@ namespace mleader.tradingbot.Engine.Cex
                                                                                                   : -1)) +
                                                                                              BuyingFeeInAmount));
 
-//        public Task<decimal> GetPurchasePriceInPrincipleAsync() => Task.FromResult(Math.Floor(ProposedPurchasePrice *
-//                                                                                              (1 -
-//                                                                                               BuyingFeeInPercentage +
-//                                                                                               AverageTradingChangeRatio *
-//                                                                                               (IsPublicUpTrending
-//                                                                                                   ? 1
-//                                                                                                   : -1)) +
-//                                                                                              BuyingFeeInAmount));
-
         public Task<decimal> GetPurchasePriceInPrincipleAsync() => Task.FromResult(Math.Floor(ProposedPurchasePrice *
-                                                                                              (1 +
+                                                                                              (1 -
+                                                                                               BuyingFeeInPercentage +
                                                                                                AverageTradingChangeRatio /
                                                                                                2 *
                                                                                                (IsPublicUpTrending
-                                                                                                   ? -1
-                                                                                                   : 1))));
+                                                                                                   ? 1
+                                                                                                   : -1)) +
+                                                                                              BuyingFeeInAmount));
+
 
         public async Task<AccountBalance> GetAccountBalanceAsync()
         {
@@ -540,8 +535,9 @@ namespace mleader.tradingbot.Engine.Cex
             }
 
             var finalPortfolioValueWhenBuying =
-                Math.Round((exchangeCurrencyBalance?.Total * buyingPriceInPrinciple +
-                            targetCurrencyBalance?.Total)
+                Math.Round(
+                    ((exchangeCurrencyBalance?.Total + buyingAmountInPrinciple +
+                      targetCurrencyBalance?.Total / buyingPriceInPrinciple) * PublicLastSellPrice)
                     .GetValueOrDefault(), 2);
             var originalPortfolioValueWhenBuying =
                 Math.Round(
@@ -549,7 +545,8 @@ namespace mleader.tradingbot.Engine.Cex
                     .GetValueOrDefault(), 2);
             var finalPortfolioValueWhenSelling =
                 Math.Round(
-                    (decimal) (exchangeCurrencyBalance?.Total * sellingPriceInPrinciple + targetCurrencyBalance?.Total),
+                    (decimal) (exchangeCurrencyBalance?.Total * sellingPriceInPrinciple +
+                               targetCurrencyBalance?.Total),
                     2);
             var originalPortfolioValueWhenSelling =
                 Math.Round(
@@ -758,7 +755,12 @@ namespace mleader.tradingbot.Engine.Cex
                             $" [BUY] Order {order.OrderId} Executed: {order.Amount} {OperatingExchangeCurrency} at {order.Price} per {OperatingExchangeCurrency}");
                         Console.ResetColor();
                         SendWebhookMessage(
-                            $" :smile: *[BUY]* Order {order.OrderId} Executed: {order.Amount} {OperatingExchangeCurrency} at {order.Price} per {OperatingExchangeCurrency}");
+                            $" :smile: *[BUY]* Order {order.OrderId} \n" +
+                            $" *Executed:* {order.Amount} {OperatingExchangeCurrency} \n" +
+                            $" *Price:* {order.Price} {OperatingTargetCurrency}\n" +
+                            $" *Cost:* {order.Amount * order.Price} {OperatingTargetCurrency}\n" +
+                            $" *Estimated Current Value:* {originalPortfolioValueWhenBuying} {OperatingTargetCurrency} \n" +
+                            $" *Estimated Target Value:* {finalPortfolioValueWhenBuying} {OperatingTargetCurrency} \n");
                         Thread.Sleep(1000);
                         ApiRequestcrruedAllowance++;
                     }
@@ -848,6 +850,13 @@ namespace mleader.tradingbot.Engine.Cex
                         Console.ResetColor();
                         SendWebhookMessage(
                             $" :moneybag: *[SELL]* Order {order.OrderId} Executed: {order.Amount} {OperatingExchangeCurrency} at {order.Price} per {OperatingExchangeCurrency}");
+                        SendWebhookMessage(
+                            $" :moneybag: *[SELL]* Order {order.OrderId} \n" +
+                            $" *Executed:* {order.Amount} {OperatingExchangeCurrency} \n" +
+                            $" *Price:* {order.Price} {OperatingTargetCurrency}\n" +
+                            $" *Cost:* {order.Amount * order.Price} {OperatingTargetCurrency}\n" +
+                            $" *Estimated Current Value:* {originalPortfolioValueWhenSelling} {OperatingTargetCurrency} \n" +
+                            $" *Estimated Target Value:* {finalPortfolioValueWhenSelling} {OperatingTargetCurrency} \n");
                         Thread.Sleep(1000);
                         ApiRequestcrruedAllowance++;
                     }
@@ -1153,17 +1162,19 @@ namespace mleader.tradingbot.Engine.Cex
             {
                 PublicWeightedAverageSellPrice,
                 PublicLastSellPrice,
-                AccountWeightedAveragePurchasePrice,
-                AccountLastPurchasePrice,
-                AccountLastSellPrice,
-                AccountWeightedAverageSellPrice,
-                (PublicLastSellPrice + AccountLastSellPrice) / 2,
-                (AccountLastPurchasePrice + AccountLastSellPrice) / 2
+                ReasonableAccountWeightedAverageSellPrice,
+                ReasonableAccountLastPurchasePrice,
+                PublicWeightedAverageBestSellPrice,
+                PublicWeightedAverageLowSellPrice,
+                ReasonableAccountLastSellPrice,
+                (PublicLastSellPrice + ReasonableAccountLastSellPrice) / 2,
+                (ReasonableAccountLastSellPrice + ReasonableAccountLastPurchasePrice) / 2,
+                ReasonableAccountLastSellPrice * (1 + AverageTradingChangeRatio * (IsPublicUpTrending ? 1 : -1))
             }.Average(),
             PublicLastSellPrice,
-            (PublicLastSellPrice + AccountLastSellPrice) / 2,
-            (AccountLastPurchasePrice + AccountLastSellPrice) / 2
-        }.Average();
+            (PublicLastSellPrice + ReasonableAccountLastSellPrice) / 2,
+            (ReasonableAccountLastPurchasePrice + ReasonableAccountLastSellPrice) / 2
+        }.Max();
 
         /// <summary>
         /// [ProposedPurchasePrice] = MIN(AVG([PublicWeightedAveragePurchasePrice],[PublicLastPurchasePrice], [PublicWeightedAverageBestPurchasePrice], [AccountWeightedAverageSellPrice]), [PublicLastPurchasePrice])
@@ -1173,15 +1184,41 @@ namespace mleader.tradingbot.Engine.Cex
         {
             new[]
             {
-                PublicWeightedAveragePurchasePrice, PublicLastPurchasePrice, PublicWeightedAverageBestPurchasePrice,
-                AccountWeightedAverageSellPrice, AccountLastPurchasePrice,
-                (PublicLastPurchasePrice + AccountLastPurchasePrice) / 2,
-                (AccountLastSellPrice + AccountLastPurchasePrice) / 2
+                PublicWeightedAveragePurchasePrice,
+                PublicLastPurchasePrice,
+                ReasonableAccountWeightedAveragePurchasePrice,
+                ReasonableAccountLastPurchasePrice,
+                PublicWeightedAverageBestPurchasePrice,
+                PublicWeightedAverageLowPurchasePrice,
+                ReasonableAccountLastPurchasePrice,
+                (PublicLastPurchasePrice + ReasonableAccountLastPurchasePrice) / 2,
+                (ReasonableAccountLastSellPrice + ReasonableAccountLastPurchasePrice) / 2,
+                ReasonableAccountLastPurchasePrice * (1 + AverageTradingChangeRatio * (IsPublicUpTrending ? 1 : -1))
             }.Average(),
             PublicLastPurchasePrice,
-            (PublicLastPurchasePrice + AccountLastPurchasePrice) / 2,
-            (AccountLastSellPrice + AccountLastPurchasePrice) / 2
+            (PublicLastPurchasePrice + ReasonableAccountLastPurchasePrice) / 2,
+            (ReasonableAccountLastSellPrice + ReasonableAccountLastPurchasePrice) / 2
         }.Min();
+
+        private decimal ReasonableAccountLastPurchasePrice =>
+            Math.Abs(AccountLastPurchasePrice - PublicLastPurchasePrice) / PublicLastPurchasePrice > TradingStrategy.MarketChangeSensitivityRatio
+                ? PublicLastPurchasePrice
+                : AccountLastPurchasePrice;
+
+        private decimal ReasonableAccountLastSellPrice =>
+            Math.Abs(AccountLastSellPrice - PublicLastSellPrice) / PublicLastSellPrice > TradingStrategy.MarketChangeSensitivityRatio
+                ? PublicLastSellPrice
+                : AccountLastSellPrice;
+
+        private decimal ReasonableAccountWeightedAverageSellPrice =>
+            Math.Abs(AccountWeightedAverageSellPrice - PublicLastSellPrice) / PublicLastSellPrice > TradingStrategy.MarketChangeSensitivityRatio
+                ? PublicLastSellPrice
+                : AccountWeightedAverageSellPrice;
+
+        private decimal ReasonableAccountWeightedAveragePurchasePrice =>
+            Math.Abs(AccountWeightedAveragePurchasePrice - PublicLastPurchasePrice) / PublicLastPurchasePrice > TradingStrategy.MarketChangeSensitivityRatio
+                ? PublicLastPurchasePrice
+                : AccountWeightedAveragePurchasePrice;
 
         #endregion
 

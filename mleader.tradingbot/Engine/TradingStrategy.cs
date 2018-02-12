@@ -19,5 +19,6 @@ namespace mleader.tradingbot.Engine
         public int HoursOfAccountHistoryOrderForSellDecision { get; set; }
         public bool AutoDecisionExecution { get; set; }
         public decimal StopLine { get; set; }
+        public decimal MarketChangeSensitivityRatio { get; set; }
     }
 }

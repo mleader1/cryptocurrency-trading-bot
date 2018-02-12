@@ -56,5 +56,10 @@ namespace mleader.tradingbot.Engine
         bool AutoDecisionExecution { get; set; }
 
         decimal StopLine { get; set; }
+
+        /// <summary>
+        /// Alert percentage of market price change that should be used for calculating buy/sell prices
+        /// </summary>
+        decimal MarketChangeSensitivityRatio { get; set; }
     }
 }

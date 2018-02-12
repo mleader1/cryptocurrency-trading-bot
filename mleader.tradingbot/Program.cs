@@ -89,6 +89,26 @@ namespace mleader.tradingbot
                 Console.ResetColor();
             }
 
+            Console.WriteLine("Hours of historical orders on CEX.IO for buying considerations: (default 24)");
+            var publicOrderHistoryForBuyingDecision = NumericUtils.GetIntegerValueFromObject(Console.ReadLine());
+            if (publicOrderHistoryForBuyingDecision <= 0) publicOrderHistoryForBuyingDecision = 24;
+
+            Console.WriteLine("Hours of historical orders on CEX.IO for selling considerations: (default 24)");
+            var publicOrderHistoryForSellingDecision = NumericUtils.GetIntegerValueFromObject(Console.ReadLine());
+            if (publicOrderHistoryForSellingDecision <= 0) publicOrderHistoryForSellingDecision = 24;
+
+            Console.WriteLine("Hours of historical account orders for buying considerations: (default 24)");
+            var accountOrderHistoryForBuyingDecision = NumericUtils.GetIntegerValueFromObject(Console.ReadLine());
+            if (accountOrderHistoryForBuyingDecision <= 0) accountOrderHistoryForBuyingDecision = 24;
+
+            Console.WriteLine("Hours of historical account orders for selling considerations: (default 24)");
+            var accountOrderHistoryForSellingDecision = NumericUtils.GetIntegerValueFromObject(Console.ReadLine());
+            if (accountOrderHistoryForSellingDecision <= 0) accountOrderHistoryForSellingDecision = 24;
+
+            Console.WriteLine("Market change sensitivity ratio in decimal: (default 0.25)");
+            var sensitivityRatio = NumericUtils.GetDecimalValueFromObject(Console.ReadLine());
+            if (sensitivityRatio <= 0) sensitivityRatio = 0.25m;
+
             bool autoExecution;
             Console.ForegroundColor = ConsoleColor.White;
             Console.BackgroundColor = ConsoleColor.DarkGreen;
@@ -99,15 +119,16 @@ namespace mleader.tradingbot
 
             var tradingStrategy = new TradingStrategy
             {
-                HoursOfAccountHistoryOrderForPurchaseDecision = 24,
-                HoursOfAccountHistoryOrderForSellDecision = 24,
-                HoursOfPublicHistoryOrderForPurchaseDecision = 24,
-                HoursOfPublicHistoryOrderForSellDecision = 24,
+                HoursOfAccountHistoryOrderForPurchaseDecision = accountOrderHistoryForBuyingDecision,
+                HoursOfAccountHistoryOrderForSellDecision = accountOrderHistoryForSellingDecision,
+                HoursOfPublicHistoryOrderForPurchaseDecision = publicOrderHistoryForBuyingDecision,
+                HoursOfPublicHistoryOrderForSellDecision = publicOrderHistoryForSellingDecision,
                 MinimumReservePercentageAfterInit = 0.1m,
                 OrderCapPercentageAfterInit = 0.6m,
                 OrderCapPercentageOnInit = 0.25m,
                 AutoDecisionExecution = autoExecution,
-                StopLine = stopLine
+                StopLine = stopLine,
+                MarketChangeSensitivityRatio = sensitivityRatio
             };
 
             tradingEngines.Add(new CexTradingEngine(new ExchangeApiConfig()
