@@ -110,13 +110,13 @@ namespace mleader.tradingbot.Engine.Cex
 
             await RefreshCexCurrencyLimitsAsync();
 
-            var availableExchangeCurrencyBalance =
+            var totalExchangeCurrencyBalance =
             (AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
-                .Select(c => c.Value?.Available)
+                .Select(c => c.Value?.Total)
                 .FirstOrDefault()).GetValueOrDefault();
-            var availableTargetCurrencyBalance = (AccountBalance?.CurrencyBalances
+            var totalTargetCurrencyBalance = (AccountBalance?.CurrencyBalances
                 ?.Where(item => item.Key == OperatingTargetCurrency)
-                .Select(c => c.Value?.Available)
+                .Select(c => c.Value?.Total)
                 .FirstOrDefault()).GetValueOrDefault();
 
             ExchangeCurrencyLimit =
@@ -125,9 +125,9 @@ namespace mleader.tradingbot.Engine.Cex
                 CurrencyLimits?.FirstOrDefault(item => item.ExchangeCurrency == OperatingTargetCurrency);
 
             InitialBuyingCap =
-                availableTargetCurrencyBalance * TradingStrategy.OrderCapPercentageOnInit;
+                totalTargetCurrencyBalance * TradingStrategy.OrderCapPercentageOnInit;
             InitialSellingCap =
-                availableExchangeCurrencyBalance * TradingStrategy.OrderCapPercentageOnInit;
+                totalExchangeCurrencyBalance * TradingStrategy.OrderCapPercentageOnInit;
 
             if (ExchangeCurrencyLimit?.MaximumExchangeAmount < InitialBuyingCap)
                 InitialBuyingCap = ExchangeCurrencyLimit.MaximumExchangeAmount == null
@@ -147,13 +147,13 @@ namespace mleader.tradingbot.Engine.Cex
                 InitialSellingCap = TargetCurrencyLimit.MinimumExchangeAmount == null
                     ? 0
                     : TargetCurrencyLimit.MinimumExchangeAmount.GetValueOrDefault();
-            if (InitialBuyingCap <= 0) InitialBuyingCap = availableExchangeCurrencyBalance;
-            if (InitialSellingCap <= 0) InitialSellingCap = availableTargetCurrencyBalance;
+            if (InitialBuyingCap <= 0) InitialBuyingCap = totalExchangeCurrencyBalance;
+            if (InitialSellingCap <= 0) InitialSellingCap = totalTargetCurrencyBalance;
 
 
             InitialBatchCycles = (int) Math.Min(
-                InitialBuyingCap > 0 ? availableTargetCurrencyBalance / InitialBuyingCap : 0,
-                InitialSellingCap > 0 ? availableExchangeCurrencyBalance / InitialSellingCap : 0);
+                InitialBuyingCap > 0 ? totalTargetCurrencyBalance / InitialBuyingCap : 0,
+                InitialSellingCap > 0 ? totalExchangeCurrencyBalance / InitialSellingCap : 0);
         }
 
         public Task StartAsync()
@@ -465,8 +465,9 @@ namespace mleader.tradingbot.Engine.Cex
                     .GetValueOrDefault() / buyingPriceInPrinciple;
                 sellingAmountInPrinciple = (TradingStrategy.OrderCapPercentageOnInit *
                                             exchangeCurrencyBalance?.Total).GetValueOrDefault();
-                buyingAmountInPrinciple = buyingAmountInPrinciple > InitialBuyingCap / buyingPriceInPrinciple
-                    ? InitialBuyingCap / buyingPriceInPrinciple
+                buyingAmountInPrinciple = buyingAmountInPrinciple >
+                                          InitialBuyingCap / buyingPriceInPrinciple
+                    ? InitialBuyingCap
                     : buyingAmountInPrinciple;
                 sellingAmountInPrinciple = sellingAmountInPrinciple > InitialSellingCap
                     ? InitialSellingCap
@@ -498,6 +499,17 @@ namespace mleader.tradingbot.Engine.Cex
                                     targetCurrencyBalance?.Available;
             sellingAmountAvailable = sellingAmountInPrinciple > 0 &&
                                      sellingAmountInPrinciple <= exchangeCurrencyBalance?.Available;
+
+            buyingAmountInPrinciple =
+                buyingAmountAvailable || (targetCurrencyBalance?.Available).GetValueOrDefault() <= 0
+                    ? buyingAmountInPrinciple
+                    : (targetCurrencyBalance?.Available / buyingPriceInPrinciple).GetValueOrDefault();
+            sellingAmountInPrinciple =
+                sellingAmountAvailable || (exchangeCurrencyBalance?.Available).GetValueOrDefault() <= 0
+                    ? sellingAmountInPrinciple
+                    : (exchangeCurrencyBalance?.Available).GetValueOrDefault();
+
+
             buyingReserveRequirementMatched = targetCurrencyBalance?.Total <= 0 ||
                                               (targetCurrencyBalance?.Total > buyingAmountInPrinciple &&
                                                (targetCurrencyBalance.Available -
@@ -512,31 +524,41 @@ namespace mleader.tradingbot.Engine.Cex
                                                 (exchangeCurrencyBalance.Total - sellingAmountInPrinciple) >=
                                                 TradingStrategy.MinimumReservePercentageAfterInit);
 
-            while (!buyingReserveRequirementMatched && buyingAmountInPrinciple > exchangeCurrencyLimit &&
-                   buyingAmountAvailable)
+            while (!buyingReserveRequirementMatched && buyingAmountInPrinciple > exchangeCurrencyLimit)
             {
-                buyingAmountInPrinciple = buyingAmountInPrinciple * 0.9m;
+                buyingAmountInPrinciple = exchangeCurrencyLimit > 0
+                    ? buyingAmountInPrinciple * 0.9m
+                    : (targetCurrencyBalance?.Available).GetValueOrDefault();
+
                 buyingAmountAvailable = buyingAmountInPrinciple > 0 &&
                                         buyingAmountInPrinciple * buyingPriceInPrinciple <=
                                         targetCurrencyBalance?.Available &&
                                         buyingAmountInPrinciple >= exchangeCurrencyLimit
                                         && buyingAmountInPrinciple * buyingPriceInPrinciple >= targetCurrencyLimit;
-                buyingReserveRequirementMatched = targetCurrencyBalance?.Total <= 0 ||
-                                                  (1 - buyingAmountInPrinciple / targetCurrencyBalance?.Total) >=
+                var calculatedTotalTargetCurrencyAmount = targetCurrencyBalance?.Available +
+                                                          (exchangeCurrencyBalance?.Total -
+                                                           exchangeCurrencyBalance?.Available) * buyingPriceInPrinciple;
+                buyingReserveRequirementMatched = calculatedTotalTargetCurrencyAmount <= 0 ||
+                                                  (1 - buyingAmountInPrinciple * buyingPriceInPrinciple /
+                                                   calculatedTotalTargetCurrencyAmount) >=
                                                   TradingStrategy.MinimumReservePercentageAfterInit;
             }
 
-            while (!sellingReserveRequirementMatched && sellingAmountInPrinciple > targetCurrencyLimit &&
-                   sellingAmountAvailable)
+            while (!sellingReserveRequirementMatched && sellingAmountInPrinciple > targetCurrencyLimit)
             {
-                sellingAmountInPrinciple = sellingAmountInPrinciple * 0.9m;
+                sellingAmountInPrinciple = targetCurrencyLimit > 0
+                    ? sellingAmountInPrinciple * 0.9m
+                    : (exchangeCurrencyBalance?.Available).GetValueOrDefault();
                 sellingAmountAvailable = sellingAmountInPrinciple > 0 &&
                                          sellingAmountInPrinciple <= exchangeCurrencyBalance?.Available &&
                                          sellingAmountInPrinciple >= exchangeCurrencyLimit &&
                                          sellingAmountInPrinciple * sellingPriceInPrinciple >= targetCurrencyLimit;
-                sellingReserveRequirementMatched = exchangeCurrencyBalance?.Total <= 0 ||
+                var calculatedTotalExchangeCurrencyAmount =
+                (exchangeCurrencyBalance?.Available +
+                 (targetCurrencyBalance?.Total - targetCurrencyBalance?.Available) / sellingPriceInPrinciple);
+                sellingReserveRequirementMatched = calculatedTotalExchangeCurrencyAmount <= 0 ||
                                                    (1 - sellingAmountInPrinciple /
-                                                    exchangeCurrencyBalance?.Total) >=
+                                                    calculatedTotalExchangeCurrencyAmount) >=
                                                    TradingStrategy.MinimumReservePercentageAfterInit;
             }
 
@@ -624,7 +646,7 @@ namespace mleader.tradingbot.Engine.Cex
             {
                 Console.BackgroundColor = ConsoleColor.DarkRed;
                 Console.Write(
-                    $"{(buyingAmountAvailable ? $"Limited Reserve - {TradingStrategy.MinimumReservePercentageAfterInit:P2}" : $"Low Fund - Need {buyingAmountInPrinciple * buyingPriceInPrinciple:N2} {targetCurrencyBalance.Currency}")}");
+                    $"{(!buyingReserveRequirementMatched ? $"Limited Reserve - {TradingStrategy.MinimumReservePercentageAfterInit:P2}" : buyingAmountInPrinciple > 0 ? $"Low Fund - Need {buyingAmountInPrinciple * buyingPriceInPrinciple:N2} {targetCurrencyBalance.Currency}" : "Low Fund")}");
                 Console.ResetColor();
                 Console.Write("\t\t  ");
             }
@@ -656,7 +678,7 @@ namespace mleader.tradingbot.Engine.Cex
             {
                 Console.BackgroundColor = ConsoleColor.DarkRed;
                 Console.Write(
-                    $"{(sellingAmountAvailable ? $"Limited Reserve - {TradingStrategy.MinimumReservePercentageAfterInit:P2}" : $"Low Fund - Need {sellingAmountInPrinciple:N4} {exchangeCurrencyBalance.Currency}")}");
+                    $"{(!sellingReserveRequirementMatched ? $"Limited Reserve - {TradingStrategy.MinimumReservePercentageAfterInit:P2}" : sellingAmountInPrinciple > 0 ? $"Low Fund - Need {sellingAmountInPrinciple:N4} {exchangeCurrencyBalance.Currency}" : "Low Fund")}");
                 Console.ResetColor();
                 Console.Write("\t\t\n");
             }
