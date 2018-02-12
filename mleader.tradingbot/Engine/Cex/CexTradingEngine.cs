@@ -10,6 +10,7 @@ using mleader.tradingbot.Data;
 using mleader.tradingbot.Data.Cex;
 using Newtonsoft.Json.Linq;
 using OElite;
+using StackExchange.Redis;
 
 namespace mleader.tradingbot.Engine.Cex
 {
@@ -23,10 +24,25 @@ namespace mleader.tradingbot.Engine.Cex
         public List<ITradeHistory> LatestPublicPurchaseHistory { get; set; }
         public List<IOrder> LatestAccountSaleHistory { get; set; }
         public List<IOrder> LatestAccountPurchaseHistory { get; set; }
-        private List<IOrder> AccountOpenOrders { get; set; }
+        public List<IOrder> AccountOpenOrders { get; set; }
+
+        public IOrder AccountNextBuyOpenOrder => AccountOpenOrders?.Where(item => item.Type == OrderType.Buy)
+            .OrderByDescending(item => item.Price)
+            .FirstOrDefault();
+
+        public IOrder AccountNextSellOpenOrder => AccountOpenOrders?.Where(item => item.Type == OrderType.Sell)
+            .OrderBy(item => item.Price).FirstOrDefault();
+
+        public IOrder AccountLastBuyOpenOrder => AccountOpenOrders?.Where(item => item.Type == OrderType.Buy)
+            .OrderBy(item => item.Price).FirstOrDefault();
+
+        public IOrder AccountLastSellOpenOrder => AccountOpenOrders?.Where(item => item.Type == OrderType.Sell)
+            .OrderByDescending(item => item.Price).FirstOrDefault();
+
 
         public ITradingStrategy TradingStrategy { get; }
 
+        private Orderbook CurrentOrderbook { get; set; }
         private string OperatingExchangeCurrency { get; }
         private string OperatingTargetCurrency { get; }
         private List<CurrencyLimit> CurrencyLimits { get; set; }
@@ -111,9 +127,9 @@ namespace mleader.tradingbot.Engine.Cex
             await RefreshCexCurrencyLimitsAsync();
 
             var totalExchangeCurrencyBalance =
-            (AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
-                .Select(c => c.Value?.Total)
-                .FirstOrDefault()).GetValueOrDefault();
+                (AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
+                    .Select(c => c.Value?.Total)
+                    .FirstOrDefault()).GetValueOrDefault();
             var totalTargetCurrencyBalance = (AccountBalance?.CurrencyBalances
                 ?.Where(item => item.Key == OperatingTargetCurrency)
                 .Select(c => c.Value?.Total)
@@ -252,6 +268,14 @@ namespace mleader.tradingbot.Engine.Cex
 
             #endregion
 
+
+            #region Get Orderbook
+
+            await RefreshPublicOrderbookAsync();
+
+            #endregion
+
+
             #region Get Account Trade Histories
 
             var nonce = GetNonce();
@@ -333,7 +357,14 @@ namespace mleader.tradingbot.Engine.Cex
 
             #endregion
 
+            #region Get Account Trading Fees
+
             await RefreshAccountFeesAsync();
+
+            #endregion
+
+            #region Get Account Balancees
+
             AccountBalance = await GetAccountBalanceAsync();
             if (AccountBalance == null)
             {
@@ -345,6 +376,10 @@ namespace mleader.tradingbot.Engine.Cex
                 return false;
             }
 
+            #endregion
+
+            #region Get Account Open Orders
+
             AccountOpenOrders = await GetOpenOrdersAsync();
             if (AccountOpenOrders == null)
             {
@@ -355,6 +390,8 @@ namespace mleader.tradingbot.Engine.Cex
                 ApiRequestCounts = 0;
                 return false;
             }
+
+            #endregion
 
             try
             {
@@ -371,6 +408,25 @@ namespace mleader.tradingbot.Engine.Cex
             }
 
             return !error;
+        }
+
+        private async Task RefreshPublicOrderbookAsync()
+        {
+            CurrentOrderbook =
+                await Rest.GetAsync<Orderbook>($"order_book/{OperatingExchangeCurrency}/{OperatingTargetCurrency}/");
+            ApiRequestCounts++;
+
+            if (CurrentOrderbook == null)
+            {
+                Console.WriteLine(
+                    await Rest.GetAsync<string>($"order_book/{OperatingExchangeCurrency}/{OperatingTargetCurrency}/"));
+
+                Console.WriteLine("\n [Unable to receive public orderbook] - Carrying 3 seconds sleep...");
+
+                Thread.Sleep(3000);
+                ApiRequestcrruedAllowance = 0;
+                ApiRequestCounts = 0;
+            }
         }
 
         private async Task RefreshCexCurrencyLimitsAsync()
@@ -440,6 +496,8 @@ namespace mleader.tradingbot.Engine.Cex
 
         private async Task DrawDecisionUIsAsync()
         {
+            #region Validate and Calculate Selling/Buying Prices and Trade Amount
+
             var sellingPriceInPrinciple = await GetSellingPriceInPrincipleAsync();
             var buyingPriceInPrinciple = await GetPurchasePriceInPrincipleAsync();
 
@@ -450,6 +508,7 @@ namespace mleader.tradingbot.Engine.Cex
             var targetCurrencyBalance = AccountBalance?.CurrencyBalances
                 ?.Where(item => item.Key == OperatingTargetCurrency)
                 .Select(item => item.Value).FirstOrDefault();
+
 
             bool buyingAmountAvailable = true,
                 sellingAmountAvailable = true,
@@ -554,8 +613,8 @@ namespace mleader.tradingbot.Engine.Cex
                                          sellingAmountInPrinciple >= exchangeCurrencyLimit &&
                                          sellingAmountInPrinciple * sellingPriceInPrinciple >= targetCurrencyLimit;
                 var calculatedTotalExchangeCurrencyAmount =
-                (exchangeCurrencyBalance?.Available +
-                 (targetCurrencyBalance?.Total - targetCurrencyBalance?.Available) / sellingPriceInPrinciple);
+                    (exchangeCurrencyBalance?.Available +
+                     (targetCurrencyBalance?.Total - targetCurrencyBalance?.Available) / sellingPriceInPrinciple);
 
                 sellingReserveRequirementMatched = calculatedTotalExchangeCurrencyAmount <= 0 ||
                                                    (1 - sellingAmountInPrinciple /
@@ -591,6 +650,10 @@ namespace mleader.tradingbot.Engine.Cex
             finalPortfolioValueDecreasedWhenSelling =
                 finalPortfolioValueWhenSelling < originalPortfolioValueWhenSelling;
 
+            #endregion
+
+            #region Draw the Graph
+
             Console.WriteLine("");
             Console.ResetColor();
             Console.ForegroundColor = ConsoleColor.Blue;
@@ -610,15 +673,10 @@ namespace mleader.tradingbot.Engine.Cex
             Console.WriteLine($"\t ========\t\t\t\t  ========\t\t\t\t");
             Console.WriteLine($"\t CEX Latest:\t{PublicLastPurchasePrice}\t\t\t  {PublicLastSellPrice}\t\t\t\t");
             Console.WriteLine($"\t Your Latest:\t{AccountLastPurchasePrice}\t\t\t  {AccountLastSellPrice}\t\t\t\t");
-            var nextBuyOrder = AccountOpenOrders?.Where(item => item.Type == OrderType.Buy)
-                .OrderByDescending(item => item.Price)
-                .FirstOrDefault();
-            var nextSellOrder = AccountOpenOrders?.Where(item => item.Type == OrderType.Sell)
-                .OrderBy(item => item.Price)
-                .FirstOrDefault();
+
             Console.WriteLine(
-                $"\t Next Order:\t{(nextBuyOrder == null ? "N/A" : nextBuyOrder.Amount.ToString(CultureInfo.InvariantCulture) + nextBuyOrder.ExchangeCurrency)}{(nextBuyOrder != null ? "@" + nextBuyOrder.Price : "")}\t\t  " +
-                $"{(nextSellOrder == null ? "N/A  " : nextSellOrder.Amount + nextSellOrder.ExchangeCurrency)}{(nextSellOrder != null ? "@" + nextSellOrder.Price : "")}");
+                $"\t Next Order:\t{(AccountNextBuyOpenOrder == null ? "N/A" : AccountNextBuyOpenOrder.Amount.ToString(CultureInfo.InvariantCulture) + AccountNextBuyOpenOrder.ExchangeCurrency)}{(AccountNextBuyOpenOrder != null ? "@" + AccountNextBuyOpenOrder.Price : "")}\t\t  " +
+                $"{(AccountNextSellOpenOrder == null ? "N/A  " : AccountNextSellOpenOrder.Amount + AccountNextSellOpenOrder.ExchangeCurrency)}{(AccountNextSellOpenOrder != null ? "@" + AccountNextSellOpenOrder.Price : "")}");
             Console.WriteLine("\n\t_____________________________________________________________________\n");
             Console.ForegroundColor = ConsoleColor.DarkGreen;
             Console.WriteLine("\n\t Buying Decision: \t\t\t  Selling Decision:");
@@ -707,6 +765,11 @@ namespace mleader.tradingbot.Engine.Cex
             Console.WriteLine("\n\t===============================****==================================\n");
             Console.ResetColor();
             Console.WriteLine("");
+
+            #endregion
+
+            #region Execute Buy Order
+
             if (buyingAmountAvailable && buyingReserveRequirementMatched && !finalPortfolioValueDecreasedWhenBuying &&
                 finalPortfolioValueWhenBuying >= TradingStrategy.StopLine)
             {
@@ -801,6 +864,10 @@ namespace mleader.tradingbot.Engine.Cex
                 }
             }
 
+            #endregion
+
+            #region Execute Sell Order
+
             if (sellingAmountAvailable && sellingReserveRequirementMatched &&
                 !finalPortfolioValueDecreasedWhenSelling &&
                 finalPortfolioValueWhenSelling >= TradingStrategy.StopLine)
@@ -882,7 +949,7 @@ namespace mleader.tradingbot.Engine.Cex
                         Console.WriteLine(
                             $" [SELL] Order {order.OrderId} Executed: {order.Amount} {OperatingExchangeCurrency} at {order.Price} per {OperatingExchangeCurrency}");
                         Console.ResetColor();
-                        
+
                         SendWebhookMessage(
                             $" :moneybag: *[SELL]* Order {order.OrderId}  - {order.Timestamp}\n" +
                             $" *Executed:* {order.Amount} {OperatingExchangeCurrency} \n" +
@@ -895,6 +962,150 @@ namespace mleader.tradingbot.Engine.Cex
                     }
                 }
             }
+
+            #endregion
+
+            #region Execute Drop Order
+
+            // execute only when orderbook is available and no trade transaction in the current period
+            if (CurrentOrderbook?.BuyTotal > 0 && CurrentOrderbook?.SellTotal > 0)
+            {
+                //Test whether to drop last buy order when no historical buy transaction in the current period
+                if (AccountLastBuyOpenOrder != null && AccountLastPurchasePrice <= 0 &&
+                    CurrentOrderbook.BuyTotal <= CurrentOrderbook.SellTotal * AccountLastPurchasePrice)
+                {
+                    // only do it when changes are significant (i.e. can't easily purchase)
+                    if (
+                        //PublicWeightedAveragePurchasePrice
+                        Math.Abs(AccountLastBuyOpenOrder.Price - PublicWeightedAveragePurchasePrice) /
+                        Math.Min(AccountLastBuyOpenOrder.Price, PublicWeightedAveragePurchasePrice) >
+                        TradingStrategy.MarketChangeSensitivityRatio
+                        &&
+                        //PublicWeightedAverageBestPurchasePrice
+                        Math.Abs(AccountLastBuyOpenOrder.Price - PublicWeightedAverageBestPurchasePrice) /
+                        Math.Min(AccountLastBuyOpenOrder.Price, PublicWeightedAverageBestPurchasePrice) >
+                        TradingStrategy.MarketChangeSensitivityRatio
+                        &&
+                        //PublicWeightedAverageLowPurchasePrice
+                        Math.Abs(AccountLastBuyOpenOrder.Price - PublicWeightedAverageLowPurchasePrice) /
+                        Math.Min(AccountLastBuyOpenOrder.Price, PublicWeightedAverageLowPurchasePrice) >
+                        TradingStrategy.MarketChangeSensitivityRatio
+                        &&
+                        //PublicLastPurchasePrice
+                        Math.Abs(AccountLastBuyOpenOrder.Price - PublicLastPurchasePrice) /
+                        Math.Min(AccountLastBuyOpenOrder.Price, PublicLastPurchasePrice) >
+                        TradingStrategy.MarketChangeSensitivityRatio
+                    )
+                    {
+                        var priorityBids =
+                            CurrentOrderbook.Bids.Where(item => item[0] >= AccountLastBuyOpenOrder.Price);
+                        var buyingWeightedAveragePrice =
+                            (priorityBids?.Sum(item => item[0] * item[1]) /
+                             priorityBids.Sum(item => item[1]))
+                            .GetValueOrDefault();
+                        // only do it when changes are significant based on future purchase demand
+                        if (buyingWeightedAveragePrice > 0 &&
+                            Math.Abs(AccountLastBuyOpenOrder.Price - buyingWeightedAveragePrice) /
+                            Math.Min(AccountLastBuyOpenOrder.Price, buyingWeightedAveragePrice) >
+                            TradingStrategy.MarketChangeSensitivityRatio
+                        )
+                        {
+                            var portfolioValueAfterCancellation =
+                                originalPortfolioValueWhenBuying -
+                                AccountLastBuyOpenOrder.Price * AccountLastBuyOpenOrder.Amount +
+                                PublicLastSellPrice * AccountLastBuyOpenOrder.Amount;
+                            if (portfolioValueAfterCancellation > TradingStrategy.StopLine)
+                                await CancelOrderAsync(AccountLastBuyOpenOrder);
+                        }
+                    }
+                }
+
+                //Test whether to drop last sell order when no historical sell transaction in the current period
+                if (AccountLastSellOpenOrder != null && PublicLastSellPrice <= 0 && CurrentOrderbook.BuyTotal >=
+                    CurrentOrderbook.SellTotal * AccountLastPurchasePrice)
+                {
+                    // only do it when changes are significant (i.e. can't easily sell)
+                    if (
+                        //PublicWeightedAveragePurchasePrice
+                        Math.Abs(AccountLastSellOpenOrder.Price - PublicWeightedAveragePurchasePrice) /
+                        Math.Min(AccountLastSellOpenOrder.Price, PublicWeightedAveragePurchasePrice) >
+                        TradingStrategy.MarketChangeSensitivityRatio
+                        &&
+                        //PublicWeightedAverageBestPurchasePrice
+                        Math.Abs(AccountLastSellOpenOrder.Price - PublicWeightedAverageBestPurchasePrice) /
+                        Math.Min(AccountLastSellOpenOrder.Price, PublicWeightedAverageBestPurchasePrice) >
+                        TradingStrategy.MarketChangeSensitivityRatio
+                        &&
+                        //PublicWeightedAverageLowPurchasePrice
+                        Math.Abs(AccountLastSellOpenOrder.Price - PublicWeightedAverageLowPurchasePrice) /
+                        Math.Min(AccountLastSellOpenOrder.Price, PublicWeightedAverageLowPurchasePrice) >
+                        TradingStrategy.MarketChangeSensitivityRatio
+                        &&
+                        //PublicLastPurchasePrice
+                        Math.Abs(AccountLastSellOpenOrder.Price - PublicLastPurchasePrice) /
+                        Math.Min(AccountLastSellOpenOrder.Price, PublicLastPurchasePrice) >
+                        TradingStrategy.MarketChangeSensitivityRatio
+                    )
+                    {
+                        var priorityBids =
+                            CurrentOrderbook.Asks.Where(item => item[0] >= AccountLastSellOpenOrder.Price);
+
+                        var sellingWeightedAveragePrice =
+                            (priorityBids?.Sum(item => item[0] * item[1]) /
+                             priorityBids?.Sum(item => item[1]))
+                            .GetValueOrDefault();
+                        // only do it when changes are significant based on future purchase demand
+                        if (sellingWeightedAveragePrice > 0 &&
+                            Math.Abs(AccountLastSellOpenOrder.Price - sellingWeightedAveragePrice) /
+                            Math.Min(AccountLastSellOpenOrder.Price, sellingWeightedAveragePrice) >
+                            TradingStrategy.MarketChangeSensitivityRatio
+                        )
+                        {
+                            var portfolioValueAfterCancellation =
+                                originalPortfolioValueWhenSelling -
+                                AccountLastSellOpenOrder.Price * AccountLastSellOpenOrder.Amount +
+                                PublicLastPurchasePrice * AccountLastSellOpenOrder.Amount;
+                            if (portfolioValueAfterCancellation > TradingStrategy.StopLine)
+                                await CancelOrderAsync(AccountLastSellOpenOrder);
+                        }
+                    }
+                }
+            }
+
+            #endregion
+        }
+
+        public async Task<bool> CancelOrderAsync(IOrder order)
+        {
+            if (order?.OrderId?.IsNullOrEmpty() == true) return false;
+            var nonce = GetNonce();
+            var result = await Rest.PostAsync<bool>(
+                $"cancel_order/{OperatingExchangeCurrency}/{OperatingTargetCurrency}", new
+                {
+                    signature = GetApiSignature(nonce),
+                    key = ApiConfig.ApiKey,
+                    nonce,
+                    id = order.OrderId
+                });
+            ApiRequestCounts++;
+
+            if (result)
+            {
+                Console.BackgroundColor = ConsoleColor.DarkRed;
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.WriteLine(
+                    $" [CANCEL] Order {order.OrderId} Cancelled: {order.Amount} {OperatingExchangeCurrency} at {order.Price} per {OperatingExchangeCurrency}");
+                Console.ResetColor();
+                SendWebhookMessage(
+                    $" :cry: *[CANCELCATION]* Order {order.OrderId} - {order.Timestamp}\n" +
+                    $" _*Executed:* {order.Amount} {OperatingExchangeCurrency}_ \n" +
+                    $" _*Price:* {order.Price} {OperatingTargetCurrency}_\n" +
+                    $" _*Current Price:* {(order.Type == OrderType.Buy ? PublicLastPurchasePrice : PublicLastSellPrice)} {OperatingTargetCurrency}_\n");
+                Thread.Sleep(1000);
+                ApiRequestcrruedAllowance++;
+            }
+
+            return result;
         }
 
 
@@ -923,7 +1134,7 @@ namespace mleader.tradingbot.Engine.Cex
                     {
                         text = message,
                         username =
-                        $"MLEADER's CEX.IO Trading Bot - {OperatingExchangeCurrency}/{OperatingTargetCurrency} "
+                            $"MLEADER's CEX.IO Trading Bot - {OperatingExchangeCurrency}/{OperatingTargetCurrency} "
                     }).Wait();
                 }
             }

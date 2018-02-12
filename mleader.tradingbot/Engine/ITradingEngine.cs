@@ -19,8 +19,17 @@ namespace mleader.tradingbot.Engine
         List<IOrder> LatestAccountPurchaseHistory { get; set; }
 
 
+        List<IOrder> AccountOpenOrders { get; set; }
+        IOrder AccountNextBuyOpenOrder { get; }
+        IOrder AccountNextSellOpenOrder { get; }
+        IOrder AccountLastBuyOpenOrder { get; }
+        IOrder AccountLastSellOpenOrder { get; }
+
+
         Task<AccountBalance> GetAccountBalanceAsync();
         Task<List<IOrder>> GetOpenOrdersAsync();
+
+        Task<bool> CancelOrderAsync(IOrder order);
 
         Task StartAsync();
         Task StopAsync();
