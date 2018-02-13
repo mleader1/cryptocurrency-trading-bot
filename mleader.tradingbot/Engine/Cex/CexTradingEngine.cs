@@ -78,7 +78,8 @@ namespace mleader.tradingbot.Engine.Cex
                 MinutesOfAccountHistoryOrderForSellDecision = 60,
                 MinutesOfPublicHistoryOrderForPurchaseDecision = 120,
                 MinutesOfPublicHistoryOrderForSellDecision = 120,
-                MinimumReservePercentageAfterInit = 0.1m,
+                MinimumReservePercentageAfterInitInTargetCurrency = 0.1m,
+                MinimumReservePercentageAfterInitInExchangeCurrency = 0.1m,
                 OrderCapPercentageAfterInit = 0.6m,
                 OrderCapPercentageOnInit = 0.25m,
                 AutoDecisionExecution = true,
@@ -562,64 +563,6 @@ namespace mleader.tradingbot.Engine.Cex
                     : (ExchangeCurrencyBalance?.Available).GetValueOrDefault();
 
 
-            buyingReserveRequirementMatched = TargetCurrencyBalance?.Total <= 0 ||
-                                              (TargetCurrencyBalance?.Total > buyingAmountInPrinciple &&
-                                               (TargetCurrencyBalance.Available -
-                                                buyingAmountInPrinciple * buyingPriceInPrinciple) /
-                                               (TargetCurrencyBalance.Total -
-                                                buyingAmountInPrinciple * buyingPriceInPrinciple) >=
-                                               TradingStrategy.MinimumReservePercentageAfterInit);
-
-            sellingReserveRequirementMatched = ExchangeCurrencyBalance?.Total <= 0 ||
-                                               (ExchangeCurrencyBalance?.Total > sellingAmountInPrinciple &&
-                                                (ExchangeCurrencyBalance.Available - sellingAmountInPrinciple) /
-                                                (ExchangeCurrencyBalance.Total - sellingAmountInPrinciple) >=
-                                                TradingStrategy.MinimumReservePercentageAfterInit);
-
-            while (!buyingReserveRequirementMatched && buyingAmountInPrinciple > exchangeCurrencyLimit)
-            {
-                buyingAmountInPrinciple = buyingAmountInPrinciple * 0.9m;
-
-                buyingAmountAvailable = buyingAmountInPrinciple > 0 &&
-                                        buyingAmountInPrinciple * buyingPriceInPrinciple <=
-                                        TargetCurrencyBalance?.Available &&
-                                        buyingAmountInPrinciple >= exchangeCurrencyLimit
-                                        && buyingAmountInPrinciple * buyingPriceInPrinciple >= targetCurrencyLimit;
-                var calculatedTotalTargetCurrencyAmount = TargetCurrencyBalance?.Available +
-                                                          (ExchangeCurrencyBalance?.Total -
-                                                           ExchangeCurrencyBalance?.Available) * buyingPriceInPrinciple;
-                buyingReserveRequirementMatched = calculatedTotalTargetCurrencyAmount <= 0 ||
-                                                  (1 - buyingAmountInPrinciple * buyingPriceInPrinciple /
-                                                   calculatedTotalTargetCurrencyAmount) >=
-                                                  TradingStrategy.MinimumReservePercentageAfterInit;
-
-                if (Math.Round(buyingAmountInPrinciple, 8) ==
-                    Math.Round((TargetCurrencyBalance?.Available).GetValueOrDefault(), 8))
-                    break;
-            }
-
-            while (!sellingReserveRequirementMatched && sellingAmountInPrinciple > targetCurrencyLimit)
-            {
-                sellingAmountInPrinciple = sellingAmountInPrinciple * 0.9m;
-                sellingAmountAvailable = sellingAmountInPrinciple > 0 &&
-                                         sellingAmountInPrinciple <= ExchangeCurrencyBalance?.Available &&
-                                         sellingAmountInPrinciple >= exchangeCurrencyLimit &&
-                                         sellingAmountInPrinciple * sellingPriceInPrinciple >= targetCurrencyLimit;
-                var calculatedTotalExchangeCurrencyAmount =
-                (ExchangeCurrencyBalance?.Available +
-                 (TargetCurrencyBalance?.Total - TargetCurrencyBalance?.Available) / sellingPriceInPrinciple);
-
-                sellingReserveRequirementMatched = calculatedTotalExchangeCurrencyAmount <= 0 ||
-                                                   (1 - sellingAmountInPrinciple /
-                                                    calculatedTotalExchangeCurrencyAmount) >=
-                                                   TradingStrategy.MinimumReservePercentageAfterInit;
-                if (Math.Round(sellingAmountInPrinciple, 8) ==
-                    Math.Round((ExchangeCurrencyBalance?.Available).GetValueOrDefault(), 8))
-                {
-                    break;
-                }
-            }
-
             var finalPortfolioValueWhenBuying =
                 Math.Round(
                     ((ExchangeCurrencyBalance?.Total + buyingAmountInPrinciple +
@@ -631,8 +574,8 @@ namespace mleader.tradingbot.Engine.Cex
                     .GetValueOrDefault(), 2);
             var finalPortfolioValueWhenSelling =
                 Math.Round(
-                    (decimal) (ExchangeCurrencyBalance?.Total * sellingPriceInPrinciple +
-                               TargetCurrencyBalance?.Total),
+                    (ExchangeCurrencyBalance?.Total * sellingPriceInPrinciple + TargetCurrencyBalance?.Total)
+                    .GetValueOrDefault(),
                     2);
             var originalPortfolioValueWhenSelling =
                 Math.Round(
@@ -642,6 +585,40 @@ namespace mleader.tradingbot.Engine.Cex
             finalPortfolioValueDecreasedWhenBuying = finalPortfolioValueWhenBuying < originalPortfolioValueWhenBuying;
             finalPortfolioValueDecreasedWhenSelling =
                 finalPortfolioValueWhenSelling < originalPortfolioValueWhenSelling;
+
+            buyingReserveRequirementMatched =
+                IsBuyingReserveRequirementMatched(buyingAmountInPrinciple, buyingPriceInPrinciple);
+            sellingReserveRequirementMatched =
+                IsSellingReserveRequirementMatched(sellingAmountInPrinciple, sellingPriceInPrinciple);
+
+
+            if (!buyingReserveRequirementMatched)
+            {
+                //find how much we can buy]
+                var maxAmount =
+                    GetMaximumBuyableAmountBasedOnReserveRatio(buyingAmountInPrinciple, buyingPriceInPrinciple);
+                if (maxAmount < buyingAmountInPrinciple)
+                    buyingAmountInPrinciple = maxAmount;
+            }
+
+            if (!sellingReserveRequirementMatched)
+            {
+                var maxAmount =
+                    GetMaximumSellableAmountBasedOnReserveRatio(sellingAmountInPrinciple, sellingPriceInPrinciple);
+                if (maxAmount < sellingAmountInPrinciple)
+                    sellingAmountInPrinciple = maxAmount;
+            }
+
+            buyingAmountAvailable = buyingAmountInPrinciple > 0 &&
+                                    buyingAmountInPrinciple * buyingPriceInPrinciple <=
+                                    TargetCurrencyBalance?.Available &&
+                                    buyingAmountInPrinciple >= exchangeCurrencyLimit
+                                    && buyingAmountInPrinciple * buyingPriceInPrinciple >= targetCurrencyLimit;
+
+            sellingAmountAvailable = sellingAmountInPrinciple > 0 &&
+                                     sellingAmountInPrinciple <= ExchangeCurrencyBalance?.Available &&
+                                     sellingAmountInPrinciple >= exchangeCurrencyLimit &&
+                                     sellingAmountInPrinciple * sellingPriceInPrinciple >= targetCurrencyLimit;
 
             #endregion
 
@@ -679,7 +656,6 @@ namespace mleader.tradingbot.Engine.Cex
             Console.Write($"\t ");
 
             #region Buying Decision
-
             Console.ForegroundColor = ConsoleColor.White;
             if (buyingAmountAvailable && buyingReserveRequirementMatched)
             {
@@ -703,7 +679,7 @@ namespace mleader.tradingbot.Engine.Cex
             {
                 Console.BackgroundColor = ConsoleColor.DarkRed;
                 Console.Write(
-                    $"{(!buyingReserveRequirementMatched ? $"Limited Reserve - {TradingStrategy.MinimumReservePercentageAfterInit:P2}" : buyingAmountInPrinciple > 0 ? $"Low Fund - Need {(buyingAmountInPrinciple > targetCurrencyLimit ? buyingAmountInPrinciple : targetCurrencyLimit) * buyingPriceInPrinciple:N2} {TargetCurrencyBalance.Currency}" : "Low Fund")}");
+                    $"{(!buyingReserveRequirementMatched ? $"Limited Reserve - {TradingStrategy.MinimumReservePercentageAfterInitInTargetCurrency:P2}" : buyingAmountInPrinciple > 0 ? $"Low Fund - Need {(buyingAmountInPrinciple > targetCurrencyLimit ? buyingAmountInPrinciple : targetCurrencyLimit) * buyingPriceInPrinciple:N2} {TargetCurrencyBalance.Currency}" : "Low Fund")}");
                 Console.ResetColor();
                 Console.Write("\t\t  ");
             }
@@ -735,7 +711,7 @@ namespace mleader.tradingbot.Engine.Cex
             {
                 Console.BackgroundColor = ConsoleColor.DarkRed;
                 Console.Write(
-                    $"{(!sellingReserveRequirementMatched ? $"Limited Reserve - {TradingStrategy.MinimumReservePercentageAfterInit:P2}" : sellingAmountInPrinciple > 0 ? $"Low Fund - Need {(sellingAmountInPrinciple > exchangeCurrencyLimit ? sellingAmountInPrinciple : exchangeCurrencyLimit):N4} {ExchangeCurrencyBalance.Currency}" : "Low Fund")}");
+                    $"{(!sellingReserveRequirementMatched ? $"Limited Reserve - {TradingStrategy.MinimumReservePercentageAfterInitInExchangeCurrency:P2}" : sellingAmountInPrinciple > 0 ? $"Low Fund - Need {(sellingAmountInPrinciple > exchangeCurrencyLimit ? sellingAmountInPrinciple : exchangeCurrencyLimit):N4} {ExchangeCurrencyBalance.Currency}" : "Low Fund")}");
                 Console.ResetColor();
                 Console.Write("\t\t\n");
             }
@@ -1074,6 +1050,95 @@ namespace mleader.tradingbot.Engine.Cex
             }
 
             #endregion
+        }
+
+
+        private bool IsBuyingReserveRequirementMatched(decimal buyingAmountInPrinciple,
+            decimal buyingPriceInPrinciple)
+        {
+            var currentPortfolioValue = GetPortfolioValueInTargetCurrency(ExchangeCurrencyBalance.Total,
+                TargetCurrencyBalance.Total, PublicLastSellPrice);
+
+            var finalPortfolioValueWhenBuying = GetPortfolioValueInTargetCurrency(
+                ExchangeCurrencyBalance.Total + buyingAmountInPrinciple,
+                TargetCurrencyBalance.Total - buyingAmountInPrinciple * buyingPriceInPrinciple,
+                buyingPriceInPrinciple);
+
+            var result = currentPortfolioValue <= 0 ||
+                         (currentPortfolioValue > buyingAmountInPrinciple * buyingPriceInPrinciple &&
+                          finalPortfolioValueWhenBuying > 0 &&
+                          (TargetCurrencyBalance.Available - buyingAmountInPrinciple * buyingPriceInPrinciple +
+                           ExchangeCurrencyBalance.InOrders * buyingPriceInPrinciple)
+                          /
+                          finalPortfolioValueWhenBuying >=
+                          TradingStrategy.MinimumReservePercentageAfterInitInTargetCurrency);
+            return result;
+        }
+
+        private decimal GetMaximumBuyableAmountBasedOnReserveRatio(decimal buyingAmountInPrinciple,
+            decimal buyingPriceInPrinciple)
+        {
+            var finalPortfolioValueWhenbuying = GetPortfolioValueInTargetCurrency(
+                ExchangeCurrencyBalance.Total + buyingAmountInPrinciple,
+                TargetCurrencyBalance.Total - buyingAmountInPrinciple * buyingPriceInPrinciple,
+                buyingPriceInPrinciple);
+
+            var maxAmount = finalPortfolioValueWhenbuying *
+                            (1 - TradingStrategy.MinimumReservePercentageAfterInitInTargetCurrency) /
+                            buyingPriceInPrinciple;
+            if (maxAmount * buyingPriceInPrinciple > TargetCurrencyBalance.Available)
+                maxAmount = TargetCurrencyBalance.Available / buyingPriceInPrinciple;
+            return maxAmount >= buyingAmountInPrinciple ? buyingAmountInPrinciple : maxAmount;
+        }
+
+        private decimal GetMaximumSellableAmountBasedOnReserveRatio(decimal sellingAmountInPrinciple,
+            decimal sellingPriceInPrinciple)
+
+        {
+            var finalPortfolioValueWhenSelling = GetPortfolioValueInExchangeCurrency(
+                ExchangeCurrencyBalance.Total + sellingAmountInPrinciple,
+                TargetCurrencyBalance.Total - sellingAmountInPrinciple * sellingPriceInPrinciple,
+                sellingPriceInPrinciple);
+            var maxAmount = (finalPortfolioValueWhenSelling -
+                             (1 - TradingStrategy.MinimumReservePercentageAfterInitInExchangeCurrency)) /
+                            sellingPriceInPrinciple;
+            if (maxAmount / sellingAmountInPrinciple > ExchangeCurrencyBalance.Available)
+                maxAmount = ExchangeCurrencyBalance.Available;
+            return maxAmount >= sellingAmountInPrinciple ? sellingAmountInPrinciple : maxAmount;
+        }
+
+        private bool IsSellingReserveRequirementMatched(decimal sellingAmountInPrinciple,
+            decimal sellingPriceInPrinciple)
+        {
+            var currentPortfolioValue = GetPortfolioValueInExchangeCurrency(ExchangeCurrencyBalance.Total,
+                TargetCurrencyBalance.Total, PublicLastPurchasePrice);
+
+            var finalPortfolioValueWhenSelling = GetPortfolioValueInExchangeCurrency(
+                ExchangeCurrencyBalance.Total + sellingAmountInPrinciple,
+                TargetCurrencyBalance.Total - sellingAmountInPrinciple * sellingPriceInPrinciple,
+                sellingPriceInPrinciple);
+
+            var result = currentPortfolioValue <= 0 ||
+                         (currentPortfolioValue > sellingAmountInPrinciple * sellingPriceInPrinciple &&
+                          finalPortfolioValueWhenSelling > 0 &&
+                          (ExchangeCurrencyBalance.Available - sellingAmountInPrinciple +
+                           TargetCurrencyBalance.InOrders / sellingPriceInPrinciple) /
+                          finalPortfolioValueWhenSelling >=
+                          TradingStrategy.MinimumReservePercentageAfterInitInExchangeCurrency);
+            return result;
+        }
+
+
+        private decimal GetPortfolioValueInTargetCurrency(decimal exchangeCurrencyValue, decimal targetCurrencyValue,
+            decimal exchangePrice, int decimalPlaces = 2)
+        {
+            return Math.Round(exchangeCurrencyValue * exchangePrice + targetCurrencyValue, decimalPlaces);
+        }
+
+        private decimal GetPortfolioValueInExchangeCurrency(decimal exchangeCurrencyValue, decimal targetCurrencyValue,
+            decimal exchangePrice, int decimalPlaces = 8)
+        {
+            return Math.Round(exchangeCurrencyValue + targetCurrencyValue / exchangePrice, decimalPlaces);
         }
 
         public async Task<bool> CancelOrderAsync(IOrder order)

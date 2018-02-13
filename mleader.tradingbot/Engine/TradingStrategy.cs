@@ -10,7 +10,8 @@ namespace mleader.tradingbot.Engine
 {
     public class TradingStrategy : ITradingStrategy
     {
-        public decimal MinimumReservePercentageAfterInit { get; set; }
+        public decimal MinimumReservePercentageAfterInitInTargetCurrency { get; set; }
+        public decimal MinimumReservePercentageAfterInitInExchangeCurrency { get; set; }
         public decimal OrderCapPercentageOnInit { get; set; }
         public decimal OrderCapPercentageAfterInit { get; set; }
         public int MinutesOfPublicHistoryOrderForPurchaseDecision { get; set; }

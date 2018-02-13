@@ -10,7 +10,9 @@ namespace mleader.tradingbot.Engine
         /// A percentage used to calculate Minimum reserved amount in reserved currency during the entire trading period
         /// the calculation is based on total investent portfolio valued based on exchange rate to reserve currency at each caculation time
         /// </summary>
-        decimal MinimumReservePercentageAfterInit { get; set; }
+        decimal MinimumReservePercentageAfterInitInTargetCurrency { get; set; }
+
+        decimal MinimumReservePercentageAfterInitInExchangeCurrency { get; set; }
 
 
         /// <summary>
