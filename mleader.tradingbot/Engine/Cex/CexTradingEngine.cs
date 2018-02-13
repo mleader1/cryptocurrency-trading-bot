@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -62,6 +63,8 @@ namespace mleader.tradingbot.Engine.Cex
         private bool SleepNeeded = false;
         private bool AutoExecution = false;
         private int InputTimeout = 5000;
+        public DateTime LastTimeBuyOrderCancellation { get; set; }
+        public DateTime LastTimeSellOrderCancellation { get; set; }
 
         public CexTradingEngine(ExchangeApiConfig apiConfig, string exchangeCurrency, string targetCurrency,
             ITradingStrategy strategy)
@@ -127,9 +130,9 @@ namespace mleader.tradingbot.Engine.Cex
             await RefreshCexCurrencyLimitsAsync();
 
             var totalExchangeCurrencyBalance =
-                (AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
-                    .Select(c => c.Value?.Total)
-                    .FirstOrDefault()).GetValueOrDefault();
+            (AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
+                .Select(c => c.Value?.Total)
+                .FirstOrDefault()).GetValueOrDefault();
             var totalTargetCurrencyBalance = (AccountBalance?.CurrencyBalances
                 ?.Where(item => item.Key == OperatingTargetCurrency)
                 .Select(c => c.Value?.Total)
@@ -484,20 +487,20 @@ namespace mleader.tradingbot.Engine.Cex
             return AccountBalance;
         }
 
+        public AccountBalanceItem ExchangeCurrencyBalance =>
+            AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
+                .Select(item => item.Value).FirstOrDefault();
+
+        public AccountBalanceItem TargetCurrencyBalance => AccountBalance?.CurrencyBalances
+            ?.Where(item => item.Key == OperatingTargetCurrency)
+            .Select(item => item.Value).FirstOrDefault();
+
         private async Task DrawDecisionUIsAsync()
         {
             #region Validate and Calculate Selling/Buying Prices and Trade Amount
 
             var sellingPriceInPrinciple = await GetSellingPriceInPrincipleAsync();
             var buyingPriceInPrinciple = await GetPurchasePriceInPrincipleAsync();
-
-
-            var exchangeCurrencyBalance =
-                AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
-                    .Select(item => item.Value).FirstOrDefault();
-            var targetCurrencyBalance = AccountBalance?.CurrencyBalances
-                ?.Where(item => item.Key == OperatingTargetCurrency)
-                .Select(item => item.Value).FirstOrDefault();
 
 
             bool buyingAmountAvailable = true,
@@ -510,10 +513,10 @@ namespace mleader.tradingbot.Engine.Cex
             if (InitialBatchCycles > 0)
             {
                 buyingAmountInPrinciple =
-                    (TradingStrategy.OrderCapPercentageOnInit * targetCurrencyBalance?.Total)
+                    (TradingStrategy.OrderCapPercentageOnInit * TargetCurrencyBalance?.Total)
                     .GetValueOrDefault() / buyingPriceInPrinciple;
                 sellingAmountInPrinciple = (TradingStrategy.OrderCapPercentageOnInit *
-                                            exchangeCurrencyBalance?.Total).GetValueOrDefault();
+                                            ExchangeCurrencyBalance?.Total).GetValueOrDefault();
                 buyingAmountInPrinciple = buyingAmountInPrinciple >
                                           InitialBuyingCap / buyingPriceInPrinciple
                     ? InitialBuyingCap
@@ -525,10 +528,10 @@ namespace mleader.tradingbot.Engine.Cex
             else
             {
                 buyingAmountInPrinciple =
-                    (TradingStrategy.OrderCapPercentageAfterInit * targetCurrencyBalance?.Total)
+                    (TradingStrategy.OrderCapPercentageAfterInit * TargetCurrencyBalance?.Total)
                     .GetValueOrDefault() / buyingPriceInPrinciple;
                 sellingAmountInPrinciple = (TradingStrategy.OrderCapPercentageAfterInit *
-                                            exchangeCurrencyBalance?.Total).GetValueOrDefault();
+                                            ExchangeCurrencyBalance?.Total).GetValueOrDefault();
             }
 
             var exchangeCurrencyLimit = ExchangeCurrencyLimit?.MinimumExchangeAmount > 0
@@ -545,32 +548,32 @@ namespace mleader.tradingbot.Engine.Cex
 
             buyingAmountAvailable = buyingAmountInPrinciple > 0 &&
                                     buyingAmountInPrinciple * buyingPriceInPrinciple <=
-                                    targetCurrencyBalance?.Available;
+                                    TargetCurrencyBalance?.Available;
             sellingAmountAvailable = sellingAmountInPrinciple > 0 &&
-                                     sellingAmountInPrinciple <= exchangeCurrencyBalance?.Available;
+                                     sellingAmountInPrinciple <= ExchangeCurrencyBalance?.Available;
 
             buyingAmountInPrinciple =
-                buyingAmountAvailable || (targetCurrencyBalance?.Available).GetValueOrDefault() <= 0
+                buyingAmountAvailable || (TargetCurrencyBalance?.Available).GetValueOrDefault() <= 0
                     ? buyingAmountInPrinciple
-                    : (targetCurrencyBalance?.Available / buyingPriceInPrinciple).GetValueOrDefault();
+                    : (TargetCurrencyBalance?.Available / buyingPriceInPrinciple).GetValueOrDefault();
             sellingAmountInPrinciple =
-                sellingAmountAvailable || (exchangeCurrencyBalance?.Available).GetValueOrDefault() <= 0
+                sellingAmountAvailable || (ExchangeCurrencyBalance?.Available).GetValueOrDefault() <= 0
                     ? sellingAmountInPrinciple
-                    : (exchangeCurrencyBalance?.Available).GetValueOrDefault();
+                    : (ExchangeCurrencyBalance?.Available).GetValueOrDefault();
 
 
-            buyingReserveRequirementMatched = targetCurrencyBalance?.Total <= 0 ||
-                                              (targetCurrencyBalance?.Total > buyingAmountInPrinciple &&
-                                               (targetCurrencyBalance.Available -
+            buyingReserveRequirementMatched = TargetCurrencyBalance?.Total <= 0 ||
+                                              (TargetCurrencyBalance?.Total > buyingAmountInPrinciple &&
+                                               (TargetCurrencyBalance.Available -
                                                 buyingAmountInPrinciple * buyingPriceInPrinciple) /
-                                               (targetCurrencyBalance.Total -
+                                               (TargetCurrencyBalance.Total -
                                                 buyingAmountInPrinciple * buyingPriceInPrinciple) >=
                                                TradingStrategy.MinimumReservePercentageAfterInit);
 
-            sellingReserveRequirementMatched = exchangeCurrencyBalance?.Total <= 0 ||
-                                               (exchangeCurrencyBalance?.Total > sellingAmountInPrinciple &&
-                                                (exchangeCurrencyBalance.Available - sellingAmountInPrinciple) /
-                                                (exchangeCurrencyBalance.Total - sellingAmountInPrinciple) >=
+            sellingReserveRequirementMatched = ExchangeCurrencyBalance?.Total <= 0 ||
+                                               (ExchangeCurrencyBalance?.Total > sellingAmountInPrinciple &&
+                                                (ExchangeCurrencyBalance.Available - sellingAmountInPrinciple) /
+                                                (ExchangeCurrencyBalance.Total - sellingAmountInPrinciple) >=
                                                 TradingStrategy.MinimumReservePercentageAfterInit);
 
             while (!buyingReserveRequirementMatched && buyingAmountInPrinciple > exchangeCurrencyLimit)
@@ -579,19 +582,19 @@ namespace mleader.tradingbot.Engine.Cex
 
                 buyingAmountAvailable = buyingAmountInPrinciple > 0 &&
                                         buyingAmountInPrinciple * buyingPriceInPrinciple <=
-                                        targetCurrencyBalance?.Available &&
+                                        TargetCurrencyBalance?.Available &&
                                         buyingAmountInPrinciple >= exchangeCurrencyLimit
                                         && buyingAmountInPrinciple * buyingPriceInPrinciple >= targetCurrencyLimit;
-                var calculatedTotalTargetCurrencyAmount = targetCurrencyBalance?.Available +
-                                                          (exchangeCurrencyBalance?.Total -
-                                                           exchangeCurrencyBalance?.Available) * buyingPriceInPrinciple;
+                var calculatedTotalTargetCurrencyAmount = TargetCurrencyBalance?.Available +
+                                                          (ExchangeCurrencyBalance?.Total -
+                                                           ExchangeCurrencyBalance?.Available) * buyingPriceInPrinciple;
                 buyingReserveRequirementMatched = calculatedTotalTargetCurrencyAmount <= 0 ||
                                                   (1 - buyingAmountInPrinciple * buyingPriceInPrinciple /
                                                    calculatedTotalTargetCurrencyAmount) >=
                                                   TradingStrategy.MinimumReservePercentageAfterInit;
 
                 if (Math.Round(buyingAmountInPrinciple, 8) ==
-                    Math.Round((targetCurrencyBalance?.Available).GetValueOrDefault(), 8))
+                    Math.Round((TargetCurrencyBalance?.Available).GetValueOrDefault(), 8))
                     break;
             }
 
@@ -599,19 +602,19 @@ namespace mleader.tradingbot.Engine.Cex
             {
                 sellingAmountInPrinciple = sellingAmountInPrinciple * 0.9m;
                 sellingAmountAvailable = sellingAmountInPrinciple > 0 &&
-                                         sellingAmountInPrinciple <= exchangeCurrencyBalance?.Available &&
+                                         sellingAmountInPrinciple <= ExchangeCurrencyBalance?.Available &&
                                          sellingAmountInPrinciple >= exchangeCurrencyLimit &&
                                          sellingAmountInPrinciple * sellingPriceInPrinciple >= targetCurrencyLimit;
                 var calculatedTotalExchangeCurrencyAmount =
-                    (exchangeCurrencyBalance?.Available +
-                     (targetCurrencyBalance?.Total - targetCurrencyBalance?.Available) / sellingPriceInPrinciple);
+                (ExchangeCurrencyBalance?.Available +
+                 (TargetCurrencyBalance?.Total - TargetCurrencyBalance?.Available) / sellingPriceInPrinciple);
 
                 sellingReserveRequirementMatched = calculatedTotalExchangeCurrencyAmount <= 0 ||
                                                    (1 - sellingAmountInPrinciple /
                                                     calculatedTotalExchangeCurrencyAmount) >=
                                                    TradingStrategy.MinimumReservePercentageAfterInit;
                 if (Math.Round(sellingAmountInPrinciple, 8) ==
-                    Math.Round((exchangeCurrencyBalance?.Available).GetValueOrDefault(), 8))
+                    Math.Round((ExchangeCurrencyBalance?.Available).GetValueOrDefault(), 8))
                 {
                     break;
                 }
@@ -619,21 +622,21 @@ namespace mleader.tradingbot.Engine.Cex
 
             var finalPortfolioValueWhenBuying =
                 Math.Round(
-                    ((exchangeCurrencyBalance?.Total + buyingAmountInPrinciple +
-                      targetCurrencyBalance?.Total / buyingPriceInPrinciple) * PublicLastSellPrice)
+                    ((ExchangeCurrencyBalance?.Total + buyingAmountInPrinciple +
+                      TargetCurrencyBalance?.Total / buyingPriceInPrinciple) * PublicLastSellPrice)
                     .GetValueOrDefault(), 2);
             var originalPortfolioValueWhenBuying =
                 Math.Round(
-                    (exchangeCurrencyBalance?.Total * PublicLastSellPrice + targetCurrencyBalance?.Total)
+                    (ExchangeCurrencyBalance?.Total * PublicLastSellPrice + TargetCurrencyBalance?.Total)
                     .GetValueOrDefault(), 2);
             var finalPortfolioValueWhenSelling =
                 Math.Round(
-                    (decimal) (exchangeCurrencyBalance?.Total * sellingPriceInPrinciple +
-                               targetCurrencyBalance?.Total),
+                    (decimal) (ExchangeCurrencyBalance?.Total * sellingPriceInPrinciple +
+                               TargetCurrencyBalance?.Total),
                     2);
             var originalPortfolioValueWhenSelling =
                 Math.Round(
-                    (exchangeCurrencyBalance?.Total * PublicLastPurchasePrice + targetCurrencyBalance?.Total)
+                    (ExchangeCurrencyBalance?.Total * PublicLastPurchasePrice + TargetCurrencyBalance?.Total)
                     .GetValueOrDefault(), 2);
 
             finalPortfolioValueDecreasedWhenBuying = finalPortfolioValueWhenBuying < originalPortfolioValueWhenBuying;
@@ -653,8 +656,8 @@ namespace mleader.tradingbot.Engine.Cex
             Console.WriteLine("\t                       +++++++++++++++++++                          ");
             Console.ForegroundColor = ConsoleColor.DarkMagenta;
             Console.WriteLine(
-                $"\n\t {exchangeCurrencyBalance?.Currency}: {exchangeCurrencyBalance?.Available}{(exchangeCurrencyBalance?.InOrders > 0 ? " \t\t\t" + exchangeCurrencyBalance?.InOrders + "\tIn Orders" : "")}" +
-                $"\n\t {targetCurrencyBalance?.Currency}: {Math.Round((targetCurrencyBalance?.Available).GetValueOrDefault(), 2)}{(targetCurrencyBalance?.InOrders > 0 ? " \t\t\t" + Math.Round((targetCurrencyBalance?.InOrders).GetValueOrDefault(), 2) + "\tIn Orders" : "")}\t\t\t\t");
+                $"\n\t {ExchangeCurrencyBalance?.Currency}: {ExchangeCurrencyBalance?.Available}{(ExchangeCurrencyBalance?.InOrders > 0 ? " \t\t\t" + ExchangeCurrencyBalance?.InOrders + "\tIn Orders" : "")}" +
+                $"\n\t {TargetCurrencyBalance?.Currency}: {Math.Round((TargetCurrencyBalance?.Available).GetValueOrDefault(), 2)}{(TargetCurrencyBalance?.InOrders > 0 ? " \t\t\t" + Math.Round((TargetCurrencyBalance?.InOrders).GetValueOrDefault(), 2) + "\tIn Orders" : "")}\t\t\t\t");
             Console.WriteLine($"\n\t Execution Time: {DateTime.Now}");
             Console.ForegroundColor = ConsoleColor.Blue;
 
@@ -672,7 +675,7 @@ namespace mleader.tradingbot.Engine.Cex
             Console.WriteLine("\n\t Buying Decision: \t\t\t  Selling Decision:");
 
             Console.WriteLine(
-                $"\t Price:\t{buyingPriceInPrinciple} {targetCurrencyBalance?.Currency}\t\t\t  {sellingPriceInPrinciple} {targetCurrencyBalance?.Currency}\t\t\t\t");
+                $"\t Price:\t{buyingPriceInPrinciple} {TargetCurrencyBalance?.Currency}\t\t\t  {sellingPriceInPrinciple} {TargetCurrencyBalance?.Currency}\t\t\t\t");
             Console.Write($"\t ");
 
             #region Buying Decision
@@ -684,7 +687,7 @@ namespace mleader.tradingbot.Engine.Cex
                 {
                     Console.BackgroundColor = ConsoleColor.DarkGreen;
                     Console.Write(
-                        $"BUY {buyingAmountInPrinciple} {exchangeCurrencyBalance?.Currency} ({buyingAmountInPrinciple * buyingPriceInPrinciple:N2} {targetCurrencyBalance?.Currency})");
+                        $"BUY {buyingAmountInPrinciple} {ExchangeCurrencyBalance?.Currency} ({buyingAmountInPrinciple * buyingPriceInPrinciple:N2} {TargetCurrencyBalance?.Currency})");
                     Console.ResetColor();
                     Console.Write("\t\t  ");
                 }
@@ -700,7 +703,7 @@ namespace mleader.tradingbot.Engine.Cex
             {
                 Console.BackgroundColor = ConsoleColor.DarkRed;
                 Console.Write(
-                    $"{(!buyingReserveRequirementMatched ? $"Limited Reserve - {TradingStrategy.MinimumReservePercentageAfterInit:P2}" : buyingAmountInPrinciple > 0 ? $"Low Fund - Need {(buyingAmountInPrinciple > targetCurrencyLimit ? buyingAmountInPrinciple : targetCurrencyLimit) * buyingPriceInPrinciple:N2} {targetCurrencyBalance.Currency}" : "Low Fund")}");
+                    $"{(!buyingReserveRequirementMatched ? $"Limited Reserve - {TradingStrategy.MinimumReservePercentageAfterInit:P2}" : buyingAmountInPrinciple > 0 ? $"Low Fund - Need {(buyingAmountInPrinciple > targetCurrencyLimit ? buyingAmountInPrinciple : targetCurrencyLimit) * buyingPriceInPrinciple:N2} {TargetCurrencyBalance.Currency}" : "Low Fund")}");
                 Console.ResetColor();
                 Console.Write("\t\t  ");
             }
@@ -716,7 +719,7 @@ namespace mleader.tradingbot.Engine.Cex
                 {
                     Console.BackgroundColor = ConsoleColor.DarkGreen;
                     Console.Write(
-                        $"SELL {sellingAmountInPrinciple} {exchangeCurrencyBalance?.Currency} ({Math.Round(sellingAmountInPrinciple * sellingPriceInPrinciple, 2)} {targetCurrencyBalance?.Currency})");
+                        $"SELL {sellingAmountInPrinciple} {ExchangeCurrencyBalance?.Currency} ({Math.Round(sellingAmountInPrinciple * sellingPriceInPrinciple, 2)} {TargetCurrencyBalance?.Currency})");
                     Console.ResetColor();
                     Console.Write("\n");
                 }
@@ -732,7 +735,7 @@ namespace mleader.tradingbot.Engine.Cex
             {
                 Console.BackgroundColor = ConsoleColor.DarkRed;
                 Console.Write(
-                    $"{(!sellingReserveRequirementMatched ? $"Limited Reserve - {TradingStrategy.MinimumReservePercentageAfterInit:P2}" : sellingAmountInPrinciple > 0 ? $"Low Fund - Need {(sellingAmountInPrinciple > exchangeCurrencyLimit ? sellingAmountInPrinciple : exchangeCurrencyLimit):N4} {exchangeCurrencyBalance.Currency}" : "Low Fund")}");
+                    $"{(!sellingReserveRequirementMatched ? $"Limited Reserve - {TradingStrategy.MinimumReservePercentageAfterInit:P2}" : sellingAmountInPrinciple > 0 ? $"Low Fund - Need {(sellingAmountInPrinciple > exchangeCurrencyLimit ? sellingAmountInPrinciple : exchangeCurrencyLimit):N4} {ExchangeCurrencyBalance.Currency}" : "Low Fund")}");
                 Console.ResetColor();
                 Console.Write("\t\t\n");
             }
@@ -742,14 +745,14 @@ namespace mleader.tradingbot.Engine.Cex
             Console.ResetColor();
             Console.WriteLine("\n\n\t Portfolio Estimates (A.I.):");
             Console.WriteLine(
-                $"\t Current:\t{originalPortfolioValueWhenBuying} {targetCurrencyBalance?.Currency}\t\t  {originalPortfolioValueWhenSelling} {targetCurrencyBalance?.Currency}\t\t\t\t");
+                $"\t Current:\t{originalPortfolioValueWhenBuying} {TargetCurrencyBalance?.Currency}\t\t  {originalPortfolioValueWhenSelling} {TargetCurrencyBalance?.Currency}\t\t\t\t");
             Console.WriteLine(
-                $"\t After  :\t{finalPortfolioValueWhenBuying} {targetCurrencyBalance?.Currency}\t\t  {finalPortfolioValueWhenSelling} {targetCurrencyBalance?.Currency}\t\t\t\t");
+                $"\t After  :\t{finalPortfolioValueWhenBuying} {TargetCurrencyBalance?.Currency}\t\t  {finalPortfolioValueWhenSelling} {TargetCurrencyBalance?.Currency}\t\t\t\t");
             Console.WriteLine(
-                $"\t Difference:\t{finalPortfolioValueWhenBuying - originalPortfolioValueWhenBuying} {targetCurrencyBalance?.Currency}\t\t  {finalPortfolioValueWhenSelling - originalPortfolioValueWhenSelling} {targetCurrencyBalance?.Currency} ");
+                $"\t Difference:\t{finalPortfolioValueWhenBuying - originalPortfolioValueWhenBuying} {TargetCurrencyBalance?.Currency}\t\t  {finalPortfolioValueWhenSelling - originalPortfolioValueWhenSelling} {TargetCurrencyBalance?.Currency} ");
             Console.ForegroundColor = ConsoleColor.DarkBlue;
             Console.WriteLine(
-                $"\n\t Stop Line:\t{TradingStrategy.StopLine} {targetCurrencyBalance.Currency}\t\t  ");
+                $"\n\t Stop Line:\t{TradingStrategy.StopLine} {TargetCurrencyBalance.Currency}\t\t  ");
 
             Console.ForegroundColor = ConsoleColor.Blue;
             Console.WriteLine("\n\t===============================****==================================\n");
@@ -768,7 +771,7 @@ namespace mleader.tradingbot.Engine.Cex
                 if (!AutoExecution)
                 {
                     Console.WriteLine(
-                        $"Do you want to execute this buy order? (BUY {buyingAmountInPrinciple} {exchangeCurrencyBalance?.Currency} at {buyingPriceInPrinciple} {targetCurrencyBalance?.Currency})");
+                        $"Do you want to execute this buy order? (BUY {buyingAmountInPrinciple} {ExchangeCurrencyBalance?.Currency} at {buyingPriceInPrinciple} {TargetCurrencyBalance?.Currency})");
                     Console.ForegroundColor = ConsoleColor.DarkRed;
                     Console.ResetColor();
                     Console.WriteLine(
@@ -846,8 +849,11 @@ namespace mleader.tradingbot.Engine.Cex
                             $" *Executed:* {order.Amount} {OperatingExchangeCurrency} \n" +
                             $" *Price:* {order.Price} {OperatingTargetCurrency}\n" +
                             $" *Cost:* {order.Amount * order.Price} {OperatingTargetCurrency}\n" +
-                            $" *Estimated Current Value:* {originalPortfolioValueWhenBuying} {OperatingTargetCurrency} \n" +
-                            $" *Estimated Target Value:* {finalPortfolioValueWhenBuying} {OperatingTargetCurrency} \n");
+                            $" *Current Value in {OperatingTargetCurrency}:* {originalPortfolioValueWhenBuying} {OperatingTargetCurrency} \n" +
+                            $" *Target Value in {OperatingTargetCurrency}:* {finalPortfolioValueWhenBuying} {OperatingTargetCurrency} \n" +
+                            $" *Current Value in {OperatingExchangeCurrency}:* {originalPortfolioValueWhenBuying / PublicLastSellPrice} {OperatingExchangeCurrency} \n" +
+                            $" *Target Value in {OperatingExchangeCurrency}:* {finalPortfolioValueWhenBuying / order.Price} {OperatingExchangeCurrency}"
+                        );
                         Thread.Sleep(1000);
                         ApiRequestcrruedAllowance++;
                     }
@@ -867,7 +873,7 @@ namespace mleader.tradingbot.Engine.Cex
                 if (!AutoExecution)
                 {
                     Console.WriteLine(
-                        $"Do you want to execute this sell order? (SELL {buyingAmountInPrinciple} {exchangeCurrencyBalance?.Currency} at {buyingPriceInPrinciple} {targetCurrencyBalance?.Currency})");
+                        $"Do you want to execute this sell order? (SELL {buyingAmountInPrinciple} {ExchangeCurrencyBalance?.Currency} at {buyingPriceInPrinciple} {TargetCurrencyBalance?.Currency})");
                     Console.ForegroundColor = ConsoleColor.DarkRed;
                     Console.ResetColor();
                     Console.WriteLine(
@@ -946,7 +952,12 @@ namespace mleader.tradingbot.Engine.Cex
                             $" *Price:* {order.Price} {OperatingTargetCurrency}\n" +
                             $" *Cost:* {order.Amount * order.Price} {OperatingTargetCurrency}\n" +
                             $" *Estimated Current Value:* {originalPortfolioValueWhenSelling} {OperatingTargetCurrency} \n" +
-                            $" *Estimated Target Value:* {finalPortfolioValueWhenSelling} {OperatingTargetCurrency} \n");
+                            $" *Estimated Target Value:* {finalPortfolioValueWhenSelling} {OperatingTargetCurrency} \n" +
+                            $" *Current Value in {OperatingTargetCurrency}:* {originalPortfolioValueWhenSelling} {OperatingTargetCurrency} \n" +
+                            $" *Target Value in {OperatingTargetCurrency}:* {finalPortfolioValueWhenSelling} {OperatingTargetCurrency} \n" +
+                            $" *Current Value in {OperatingExchangeCurrency}:* {originalPortfolioValueWhenSelling / PublicLastSellPrice} {OperatingExchangeCurrency} \n" +
+                            $" *Target Value in {OperatingExchangeCurrency}:* {finalPortfolioValueWhenSelling / order.Price} {OperatingExchangeCurrency}"
+                        );
                         Thread.Sleep(1000);
                         ApiRequestcrruedAllowance++;
                     }
@@ -1011,7 +1022,7 @@ namespace mleader.tradingbot.Engine.Cex
                 }
 
                 //Test whether to drop last sell order when no historical sell transaction in the current period
-                if (AccountLastSellOpenOrder != null && PublicLastSellPrice <= 0 && CurrentOrderbook.BuyTotal >=
+                if (AccountLastSellOpenOrder != null && AccountLastSellPrice <= 0 && CurrentOrderbook.BuyTotal >=
                     CurrentOrderbook.SellTotal * AccountLastPurchasePrice)
                 {
                     // only do it when changes are significant (i.e. can't easily sell)
@@ -1068,9 +1079,19 @@ namespace mleader.tradingbot.Engine.Cex
         public async Task<bool> CancelOrderAsync(IOrder order)
         {
             if (order?.OrderId?.IsNullOrEmpty() == true) return false;
+
+            var executable = order.Type == OrderType.Buy &&
+                             LastTimeBuyOrderCancellation.IsValidSqlDateTime() &&
+                             LastTimeBuyOrderCancellation.AddMinutes(TradingStrategy
+                                 .MinutesOfAccountHistoryOrderForPurchaseDecision) <= DateTime.Now ||
+                             order.Type == OrderType.Sell && LastTimeSellOrderCancellation.IsValidSqlDateTime() &&
+                             LastTimeSellOrderCancellation.AddMinutes(TradingStrategy
+                                 .MinutesOfAccountHistoryOrderForSellDecision) <=
+                             DateTime.Now;
+            if (!executable) return false;
             var nonce = GetNonce();
-            var result = await Rest.PostAsync<bool>(
-                $"cancel_order/{OperatingExchangeCurrency}/{OperatingTargetCurrency}", new
+            var result = await Rest.PostAsync<string>(
+                $"cancel_order/", new
                 {
                     signature = GetApiSignature(nonce),
                     key = ApiConfig.ApiKey,
@@ -1079,23 +1100,38 @@ namespace mleader.tradingbot.Engine.Cex
                 });
             ApiRequestCounts++;
 
-            if (result)
+            if (BooleanUtils.GetBooleanValueFromObject(result))
             {
                 Console.BackgroundColor = ConsoleColor.DarkRed;
                 Console.ForegroundColor = ConsoleColor.White;
                 Console.WriteLine(
                     $" [CANCEL] Order {order.OrderId} Cancelled: {order.Amount} {OperatingExchangeCurrency} at {order.Price} per {OperatingExchangeCurrency}");
                 Console.ResetColor();
+
+                var currentValue = ExchangeCurrencyBalance?.Total * PublicLastSellPrice + TargetCurrencyBalance?.Total;
+
+                var targetValue = order.Type == OrderType.Buy
+                    ? (ExchangeCurrencyBalance?.Total + order.Amount) * order.Price + TargetCurrencyBalance?.Total -
+                      (order.Amount * order.Price)
+                    : (ExchangeCurrencyBalance?.Total - order.Amount) * order.Price + TargetCurrencyBalance?.Total +
+                      (order.Amount * order.Price);
+
+
                 SendWebhookMessage(
                     $" :cry: *[CANCELCATION]* Order {order.OrderId} - {order.Timestamp}\n" +
                     $" _*Executed:* {order.Amount} {OperatingExchangeCurrency}_ \n" +
                     $" _*Price:* {order.Price} {OperatingTargetCurrency}_\n" +
-                    $" _*Current Price:* {(order.Type == OrderType.Buy ? PublicLastPurchasePrice : PublicLastSellPrice)} {OperatingTargetCurrency}_\n");
+                    $" _*Current Price:* {(order.Type == OrderType.Buy ? PublicLastPurchasePrice : PublicLastSellPrice)} {OperatingTargetCurrency}_\n" +
+                    $" *Current Value in {OperatingTargetCurrency}:* {currentValue} {OperatingTargetCurrency} \n" +
+                    $" *Target Value in {OperatingTargetCurrency}:* {targetValue} {OperatingTargetCurrency} \n" +
+                    $" *Current Value in {OperatingExchangeCurrency}:* {currentValue / PublicLastSellPrice} {OperatingExchangeCurrency} \n" +
+                    $" *Target Value in {OperatingExchangeCurrency}:* {targetValue / order.Price} {OperatingExchangeCurrency}"
+                );
                 Thread.Sleep(1000);
                 ApiRequestcrruedAllowance++;
             }
 
-            return result;
+            return BooleanUtils.GetBooleanValueFromObject(result);
         }
 
 
@@ -1124,7 +1160,7 @@ namespace mleader.tradingbot.Engine.Cex
                     {
                         text = message,
                         username =
-                            $"MLEADER's CEX.IO Trading Bot - {OperatingExchangeCurrency}/{OperatingTargetCurrency} "
+                        $"MLEADER's CEX.IO Trading Bot - {OperatingExchangeCurrency}/{OperatingTargetCurrency} "
                     }).Wait();
                 }
             }

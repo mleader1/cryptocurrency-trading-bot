@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using mleader.tradingbot.Data;
 using Microsoft.Extensions.Logging;
@@ -24,6 +25,9 @@ namespace mleader.tradingbot.Engine
         IOrder AccountNextSellOpenOrder { get; }
         IOrder AccountLastBuyOpenOrder { get; }
         IOrder AccountLastSellOpenOrder { get; }
+
+        DateTime LastTimeBuyOrderCancellation { get; set; }
+        DateTime LastTimeSellOrderCancellation { get; set; }
 
 
         Task<AccountBalance> GetAccountBalanceAsync();
