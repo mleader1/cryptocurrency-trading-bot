@@ -793,8 +793,7 @@ namespace mleader.tradingbot.Engine.Cex
             {
                 if (!finalPortfolioValueDecreasedWhenSelling)
                 {
-                    if (
-                        (isBullMarket || !isBullMarket && !isBearMarketContinuable))
+                    if (isBullMarket || !isBullMarket && !isBearMarketContinuable)
                     {
                         Console.BackgroundColor = ConsoleColor.DarkGreen;
                         Console.Write(
@@ -850,20 +849,21 @@ namespace mleader.tradingbot.Engine.Cex
                 !finalPortfolioValueDecreasedWhenBuying &&
                 finalPortfolioValueWhenBuying >= TradingStrategy.StopLine && !IsBearMarketContinuable)
             {
-                if (buyingPriceInPrinciple > sellingPriceInPrinciple)
+                if (buyingPriceInPrinciple > sellingPriceInPrinciple ||
+                    buyingPriceInPrinciple >= AccountWeightedAverageSellPrice)
                 {
                     Console.BackgroundColor = ConsoleColor.Black;
                     Console.ForegroundColor = ConsoleColor.White;
                     Console.WriteLine(
                         $"WARNING - Buying price ({buyingPriceInPrinciple}) higher than selling price ({sellingPriceInPrinciple}) - Skip current [BUY] order execution for lower risk.");
                     SendWebhookMessage(
-                        $":warning:  Buying Higher than selling - BUY: {buyingPriceInPrinciple} / SELL: {sellingPriceInPrinciple} \n" +
+                        $":warning:  Buying Higher than selling - BUY: {buyingPriceInPrinciple} / SELL: {sellingPriceInPrinciple} / AVG SELL: {AccountWeightedAverageSellPrice}\n" +
                         $"Skipped Order Amount In {OperatingExchangeCurrency}: {buyingAmountInPrinciple} {OperatingExchangeCurrency}\n" +
                         $"Skipped Order Amount In {OperatingTargetCurrency}: {buyingAmountInPrinciple * buyingPriceInPrinciple:N2} {OperatingTargetCurrency}\n" +
                         $"Skkipped on: {DateTime.Now}");
                     Console.ResetColor();
                 }
-                else
+                else if (!isBullMarket || isBullMarket && isBullMarketContinuable)
                 {
                     var immediateExecute = false;
                     var skip = false;
@@ -996,20 +996,21 @@ namespace mleader.tradingbot.Engine.Cex
                 !finalPortfolioValueDecreasedWhenSelling &&
                 finalPortfolioValueWhenSelling >= TradingStrategy.StopLine && !IsBullMarketContinuable)
             {
-                if (buyingPriceInPrinciple > sellingPriceInPrinciple)
+                if (buyingPriceInPrinciple > sellingPriceInPrinciple ||
+                    sellingPriceInPrinciple <= AccountWeightedAveragePurchasePrice)
                 {
                     Console.BackgroundColor = ConsoleColor.Black;
                     Console.ForegroundColor = ConsoleColor.White;
                     Console.WriteLine(
                         "WARNING - Selling price lower than buying price - Skip current [SELL] order execution for lower risk.");
                     SendWebhookMessage(
-                        $":warning:  Selling lower than buying - BUY: {buyingPriceInPrinciple} / SELL: {sellingPriceInPrinciple} \n" +
+                        $":warning:  Selling lower than buying - BUY: {buyingPriceInPrinciple} / AVG BUY: {AccountWeightedAveragePurchasePrice} / SELL: {sellingPriceInPrinciple} \n" +
                         $"Skipped Order Amount In {OperatingExchangeCurrency}: {buyingAmountInPrinciple} {OperatingExchangeCurrency}\n" +
                         $"Skipped Order Amount In {OperatingTargetCurrency}: {buyingAmountInPrinciple * buyingPriceInPrinciple:N2} {OperatingTargetCurrency}\n" +
                         $"Skkipped on: {DateTime.Now}");
                     Console.ResetColor();
                 }
-                else
+                else if (isBullMarket || !isBullMarket && !isBearMarketContinuable)
                 {
                     var immediateExecute = false;
                     var skip = false;
