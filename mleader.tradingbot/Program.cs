@@ -105,9 +105,9 @@ namespace mleader.tradingbot
             var accountOrderHistoryForSellingDecision = NumericUtils.GetIntegerValueFromObject(Console.ReadLine());
             if (accountOrderHistoryForSellingDecision <= 0) accountOrderHistoryForSellingDecision = 120;
 
-            Console.WriteLine("Minutes change sensitivity ratio in decimal: (default 0.03)");
+            Console.WriteLine("Minutes change sensitivity ratio in decimal: (default 0.015)");
             var sensitivityRatio = NumericUtils.GetDecimalValueFromObject(Console.ReadLine());
-            if (sensitivityRatio <= 0) sensitivityRatio = 0.03m;
+            if (sensitivityRatio <= 0) sensitivityRatio = 0.015m;
 
             bool autoExecution;
             Console.ForegroundColor = ConsoleColor.White;
