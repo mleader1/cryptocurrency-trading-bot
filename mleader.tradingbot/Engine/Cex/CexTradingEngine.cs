@@ -133,9 +133,9 @@ namespace mleader.tradingbot.Engine.Cex
             }
 
             var totalExchangeCurrencyBalance =
-                (AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
-                    .Select(c => c.Value?.Total)
-                    .FirstOrDefault()).GetValueOrDefault();
+            (AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
+                .Select(c => c.Value?.Total)
+                .FirstOrDefault()).GetValueOrDefault();
             var totalTargetCurrencyBalance = (AccountBalance?.CurrencyBalances
                 ?.Where(item => item.Key == OperatingTargetCurrency)
                 .Select(c => c.Value?.Total)
@@ -635,7 +635,7 @@ namespace mleader.tradingbot.Engine.Cex
             {
                 //find how much we can buy]
                 var maxAmount =
-                    GetMaximumBuyableAmountBasedOnReserveRatio(buyingAmountInPrinciple, buyingPriceInPrinciple);
+                    GetMaximumBuyableAmountBasedOnReserveRatio(buyingPriceInPrinciple);
                 if (maxAmount < buyingAmountInPrinciple)
                     buyingAmountInPrinciple = maxAmount;
             }
@@ -643,7 +643,7 @@ namespace mleader.tradingbot.Engine.Cex
             if (!IsSellingReserveRequirementMatched(sellingAmountInPrinciple, sellingPriceInPrinciple))
             {
                 var maxAmount =
-                    GetMaximumSellableAmountBasedOnReserveRatio(sellingAmountInPrinciple, sellingPriceInPrinciple);
+                    GetMaximumSellableAmountBasedOnReserveRatio(sellingPriceInPrinciple);
                 if (maxAmount < sellingAmountInPrinciple)
                     sellingAmountInPrinciple = maxAmount;
             }
@@ -663,19 +663,22 @@ namespace mleader.tradingbot.Engine.Cex
                                      sellingAmountInPrinciple * sellingPriceInPrinciple >= targetCurrencyLimit;
 
 
-            var isBetterBullMarketPriceIdentified =
-                Math.Abs(PublicWeightedAverageBestSellPrice * (1 + AverageTradingChangeRatio) -
-                         sellingPriceInPrinciple) /
-                sellingPriceInPrinciple > TradingStrategy.MarketChangeSensitivityRatio ||
-                Math.Abs(PublicWeightedAverageLowPurchasePrice * (1 + AverageTradingChangeRatio) -
-                         sellingPriceInPrinciple) /
-                sellingPriceInPrinciple > TradingStrategy.MarketChangeSensitivityRatio;
-            var isBetterBearMarketplacePriceIdentified =
-                Math.Abs(PublicWeightedAverageBestPurchasePrice * (1 - AverageTradingChangeRatio) -
-                         buyingPriceInPrinciple) /
-                buyingPriceInPrinciple > TradingStrategy.MarketChangeSensitivityRatio ||
-                Math.Abs(PublicWeightedAverageLowSellPrice * (1 - AverageTradingChangeRatio) - buyingPriceInPrinciple) /
-                buyingPriceInPrinciple > TradingStrategy.MarketChangeSensitivityRatio;
+//            var IsBullMarketContinuable =
+//                PublicWeightedAverageBestSellPrice * (1 + AverageTradingChangeRatio) > sellingPriceInPrinciple
+//                ||
+//                PublicWeightedAverageBestSellPrice > PublicWeightedAverageBestPurchasePrice
+//                ||
+//                Math.Abs(PublicWeightedAverageBestSellPrice - PublicWeightedAverageBestSellPrice) /
+//                PublicWeightedAverageBestSellPrice > TradingStrategy.MarketChangeSensitivityRatio ||
+//                Math.Abs(PublicWeightedAverageLowPurchasePrice * (1 + AverageTradingChangeRatio) -
+//                         PublicLastPurchasePrice) /
+//                PublicLastPurchasePrice > TradingStrategy.MarketChangeSensitivityRatio;
+//            var IsBearMarketContinuable =
+//                Math.Abs(PublicWeightedAverageBestPurchasePrice * (1 - AverageTradingChangeRatio) -
+//                         PublicLastPurchasePrice) /
+//                PublicLastPurchasePrice > TradingStrategy.MarketChangeSensitivityRatio ||
+//                Math.Abs(PublicWeightedAverageLowSellPrice * (1 - AverageTradingChangeRatio) - PublicLastSellPrice) /
+//                PublicLastSellPrice > TradingStrategy.MarketChangeSensitivityRatio;
 
             #endregion
 
@@ -718,7 +721,8 @@ namespace mleader.tradingbot.Engine.Cex
             if (buyingAmountAvailable &&
                 IsBuyingReserveRequirementMatched(buyingAmountInPrinciple, buyingPriceInPrinciple))
             {
-                if (!finalPortfolioValueDecreasedWhenBuying && !isBetterBearMarketplacePriceIdentified)
+                if (!finalPortfolioValueDecreasedWhenBuying &&
+                    (!IsBullMarket || IsBullMarket && !IsBearMarketContinuable))
                 {
                     Console.BackgroundColor = ConsoleColor.DarkGreen;
                     Console.Write(
@@ -728,7 +732,7 @@ namespace mleader.tradingbot.Engine.Cex
                 }
                 else
                 {
-                    if (isBetterBearMarketplacePriceIdentified)
+                    if (IsBearMarketContinuable)
                     {
                         Console.BackgroundColor = ConsoleColor.Black;
                         Console.Write("Bear But Better Hold");
@@ -760,7 +764,8 @@ namespace mleader.tradingbot.Engine.Cex
             if (sellingAmountAvailable &&
                 IsSellingReserveRequirementMatched(sellingAmountInPrinciple, sellingPriceInPrinciple))
             {
-                if (!finalPortfolioValueDecreasedWhenSelling && !isBetterBullMarketPriceIdentified)
+                if (!finalPortfolioValueDecreasedWhenSelling &&
+                    (IsBullMarket || !IsBullMarket && !IsBullMarketContinuable))
                 {
                     Console.BackgroundColor = ConsoleColor.DarkGreen;
                     Console.Write(
@@ -770,7 +775,7 @@ namespace mleader.tradingbot.Engine.Cex
                 }
                 else
                 {
-                    if (isBetterBearMarketplacePriceIdentified)
+                    if (IsBearMarketContinuable)
                     {
                         Console.BackgroundColor = ConsoleColor.DarkRed;
                         Console.Write("Bull But Better Hold");
@@ -820,7 +825,7 @@ namespace mleader.tradingbot.Engine.Cex
             if (buyingAmountAvailable &&
                 IsBuyingReserveRequirementMatched(buyingAmountInPrinciple, buyingPriceInPrinciple) &&
                 !finalPortfolioValueDecreasedWhenBuying &&
-                finalPortfolioValueWhenBuying >= TradingStrategy.StopLine && !isBetterBearMarketplacePriceIdentified)
+                finalPortfolioValueWhenBuying >= TradingStrategy.StopLine && !IsBearMarketContinuable)
             {
                 if (buyingPriceInPrinciple > sellingPriceInPrinciple)
                 {
@@ -966,7 +971,7 @@ namespace mleader.tradingbot.Engine.Cex
             if (sellingAmountAvailable &&
                 IsSellingReserveRequirementMatched(sellingAmountInPrinciple, sellingPriceInPrinciple) &&
                 !finalPortfolioValueDecreasedWhenSelling &&
-                finalPortfolioValueWhenSelling >= TradingStrategy.StopLine && !isBetterBullMarketPriceIdentified)
+                finalPortfolioValueWhenSelling >= TradingStrategy.StopLine && !IsBullMarketContinuable)
             {
                 if (buyingPriceInPrinciple > sellingPriceInPrinciple)
                 {
@@ -1223,58 +1228,33 @@ namespace mleader.tradingbot.Engine.Cex
             decimal buyingPriceInPrinciple)
         {
             return buyingAmountInPrinciple <=
-                   GetMaximumBuyableAmountBasedOnReserveRatio(buyingAmountInPrinciple, buyingPriceInPrinciple);
+                   GetMaximumBuyableAmountBasedOnReserveRatio(buyingPriceInPrinciple);
         }
 
-        private decimal GetMaximumBuyableAmountBasedOnReserveRatio(decimal buyingAmountInPrinciple,
-            decimal buyingPriceInPrinciple)
+        private decimal GetMaximumBuyableAmountBasedOnReserveRatio(decimal buyingPriceInPrinciple)
         {
-            var finalPortfolioValueWhenbuying = GetPortfolioValueInTargetCurrency(
-                ExchangeCurrencyBalance.Total + buyingAmountInPrinciple,
-                TargetCurrencyBalance.Total - buyingAmountInPrinciple * buyingPriceInPrinciple,
-                buyingPriceInPrinciple);
-
-            var maxAmount = finalPortfolioValueWhenbuying *
+            var maxAmount = TargetCurrencyBalance.Available *
                             (1 - TradingStrategy.MinimumReservePercentageAfterInitInTargetCurrency) /
                             buyingPriceInPrinciple *
                             (1 - BuyingFeeInPercentage) - BuyingFeeInAmount;
 
-            var availableAmount =
-                TargetCurrencyBalance.Available / buyingPriceInPrinciple * (1 - BuyingFeeInPercentage) -
-                BuyingFeeInAmount;
-
-            if (maxAmount > availableAmount)
-                maxAmount = Math.Truncate(availableAmount * 100000000) / 100000000;
-            if (maxAmount < 0) buyingAmountInPrinciple = 0;
-            return maxAmount >= buyingAmountInPrinciple ? buyingAmountInPrinciple : maxAmount;
+            return Math.Truncate(maxAmount * 100000000) / 100000000;
         }
 
-        private decimal GetMaximumSellableAmountBasedOnReserveRatio(decimal sellingAmountInPrinciple,
-            decimal sellingPriceInPrinciple)
+        private decimal GetMaximumSellableAmountBasedOnReserveRatio(decimal sellingPriceInPrinciple)
 
         {
-            var finalPortfolioValueWhenSelling = GetPortfolioValueInExchangeCurrency(
-                ExchangeCurrencyBalance.Total + sellingAmountInPrinciple,
-                TargetCurrencyBalance.Total - sellingAmountInPrinciple * sellingPriceInPrinciple,
-                sellingPriceInPrinciple);
-
-            var maxAmount = finalPortfolioValueWhenSelling *
+            var maxAmount = ExchangeCurrencyBalance.Available *
                             (1 - TradingStrategy.MinimumReservePercentageAfterInitInExchangeCurrency) *
                             (1 - SellingFeeInPercentage) - SellingFeeInAmount;
-            var availableAmount = ExchangeCurrencyBalance.Available *
-                                  (1 - SellingFeeInPercentage) - SellingFeeInAmount;
-            if (maxAmount > availableAmount)
-                maxAmount = availableAmount;
-
-            if (maxAmount < 0) sellingAmountInPrinciple = 0;
-            return maxAmount >= sellingAmountInPrinciple ? sellingAmountInPrinciple : maxAmount;
+            return maxAmount;
         }
 
         private bool IsSellingReserveRequirementMatched(decimal sellingAmountInPrinciple,
             decimal sellingPriceInPrinciple)
         {
             return sellingAmountInPrinciple <=
-                   GetMaximumSellableAmountBasedOnReserveRatio(sellingAmountInPrinciple, sellingPriceInPrinciple);
+                   GetMaximumSellableAmountBasedOnReserveRatio(sellingPriceInPrinciple);
         }
 
 
@@ -1397,7 +1377,7 @@ namespace mleader.tradingbot.Engine.Cex
                     {
                         text = message,
                         username =
-                            $"MLEADER's CEX.IO Trading Bot - {OperatingExchangeCurrency}/{OperatingTargetCurrency} "
+                        $"MLEADER's CEX.IO Trading Bot - {OperatingExchangeCurrency}/{OperatingTargetCurrency} "
                     }).Wait();
                 }
             }
@@ -1479,15 +1459,32 @@ namespace mleader.tradingbot.Engine.Cex
         /// <summary>
         /// Is market price going up: buying amount > selling amount
         /// </summary>
-        private bool IsPublicUpTrending => LatestPublicPurchaseHistory?.Sum(item => item.Amount) >
-                                           LatestPublicSaleHistory?.Sum(item => item.Amount) &&
-                                           (CurrentOrderbook != null &&
-                                            CurrentOrderbook.BuyTotal > CurrentOrderbook.SellTotal *
-                                            PublicWeightedAveragePurchasePrice
-                                            ||
-                                            CurrentOrderbook.BuyTotal / PublicWeightedAverageSellPrice >
-                                            CurrentOrderbook.SellTotal
-                                           );
+        private bool IsBullMarket => LatestPublicPurchaseHistory?.Sum(item => item.Amount) >
+                                     LatestPublicSaleHistory?.Sum(item => item.Amount) &&
+                                     PublicWeightedAveragePurchasePrice > PublicWeightedAverageSellPrice &&
+                                     PublicWeightedAverageLowPurchasePrice > PublicWeightedAverageBestSellPrice &&
+                                     PublicWeightedAverageLowPurchasePrice > PublicWeightedAverageLowSellPrice;
+
+        private bool IsBullMarketContinuable => IsBullMarket &&
+                                                CurrentOrderbook?.Bids?.Where(item =>
+                                                        item[0] >= PublicWeightedAverageLowSellPrice *
+                                                        (1 - AverageTradingChangeRatio))
+                                                    .Sum(item => item[0] * item[1]) > CurrentOrderbook?.Asks
+                                                    ?.Where(item =>
+                                                        item[0] <= PublicWeightedAverageLowPurchasePrice *
+                                                        (1 + AverageTradingChangeRatio))
+                                                    .Sum(item => item[0] * item[1]);
+
+        private bool IsBearMarketContinuable => !IsBullMarket &&
+                                                CurrentOrderbook?.Bids?.Where(item =>
+                                                        item[0] >= PublicWeightedAverageBestSellPrice *
+                                                        (1 - AverageTradingChangeRatio))
+                                                    .Sum(item => item[0] * item[1]) < CurrentOrderbook?.Asks
+                                                    ?.Where(item =>
+                                                        item[0] <= PublicWeightedAverageBestPurchasePrice *
+                                                        (1 + AverageTradingChangeRatio))
+                                                    .Sum(item => item[0] * item[1]);
+
 
         /// <summary>
         /// Find the last X records of public sale prices and do a weighted average
@@ -1512,7 +1509,7 @@ namespace mleader.tradingbot.Engine.Cex
         {
             get
             {
-                var bestFirstThirdPrices = LatestPublicSaleHistory?.OrderByDescending(item => item.Price)
+                var bestFirstThirdPrices = LatestPublicSaleHistory?.OrderBy(item => item.Price)
                     .Take(LatestPublicSaleHistory.Count / 3);
                 var totalAmount = (bestFirstThirdPrices?.Sum(item => item.Amount)).GetValueOrDefault();
                 return totalAmount > 0
@@ -1529,7 +1526,7 @@ namespace mleader.tradingbot.Engine.Cex
         {
             get
             {
-                var bestLastThirdPrices = LatestPublicSaleHistory?.OrderBy(item => item.Price)
+                var bestLastThirdPrices = LatestPublicSaleHistory?.OrderByDescending(item => item.Price)
                     .Take(LatestPublicSaleHistory.Count / 3);
                 var totalAmount = (bestLastThirdPrices?.Sum(item => item.Amount)).GetValueOrDefault();
                 return totalAmount > 0
@@ -1572,7 +1569,7 @@ namespace mleader.tradingbot.Engine.Cex
         {
             get
             {
-                var bestFirstThirdPrices = LatestPublicPurchaseHistory?.OrderByDescending(item => item.Price)
+                var bestFirstThirdPrices = LatestPublicPurchaseHistory?.OrderBy(item => item.Price)
                     .Take(LatestPublicPurchaseHistory.Count / 3);
                 var totalAmount = (bestFirstThirdPrices?.Sum(item => item.Amount)).GetValueOrDefault();
                 return totalAmount > 0
@@ -1589,7 +1586,7 @@ namespace mleader.tradingbot.Engine.Cex
         {
             get
             {
-                var bestLastThirdPrices = LatestPublicPurchaseHistory?.OrderBy(item => item.Price)
+                var bestLastThirdPrices = LatestPublicPurchaseHistory?.OrderByDescending(item => item.Price)
                     .Take(LatestPublicPurchaseHistory.Count / 3);
                 var totalAmount = (bestLastThirdPrices?.Sum(item => item.Amount)).GetValueOrDefault();
                 return totalAmount > 0
@@ -1693,16 +1690,16 @@ namespace mleader.tradingbot.Engine.Cex
                         PublicWeightedAverageBestSellPrice,
                         orderbookValuatedPrice
                     }.Average(),
-                    IsPublicUpTrending
+                    IsBullMarket
                         ? Math.Max(ReasonableAccountWeightedAverageSellPrice, PublicWeightedAverageSellPrice)
                         : new[] {ReasonableAccountWeightedAverageSellPrice, PublicWeightedAverageSellPrice}.Average(),
-                    IsPublicUpTrending ? PublicWeightedAverageBestSellPrice : PublicWeightedAverageLowSellPrice,
+                    IsBullMarket ? PublicWeightedAverageBestSellPrice : PublicWeightedAverageLowSellPrice,
                     orderbookValuatedPrice
 //                    (PublicLastSellPrice + ReasonableAccountLastSellPrice + ReasonableAccountLastPurchasePrice) / 3,
 //                    (ReasonableAccountLastSellPrice + orderbookValuatedPrice) / 2
                 }.Max() * (1 + Math.Max(AverageTradingChangeRatio,
                                TradingStrategy.MarketChangeSensitivityRatio) *
-                           (IsPublicUpTrending ? 1 : 0));
+                           (IsBullMarket ? 1 : 0));
 
                 orderbookPriorityAsks = CurrentOrderbook?.Asks?.Where(i => i[0] <= proposedSellingPrice);
                 var exchangeCurrencyBalance =
@@ -1759,11 +1756,11 @@ namespace mleader.tradingbot.Engine.Cex
                         PublicWeightedAverageBestPurchasePrice,
                         orderbookValuatedPrice
                     }.Average(),
-                    IsPublicUpTrending
+                    IsBullMarket
                         ? Math.Max(ReasonableAccountWeightedAveragePurchasePrice, PublicWeightedAveragePurchasePrice)
                         : new[] {ReasonableAccountWeightedAveragePurchasePrice, PublicWeightedAveragePurchasePrice}
                             .Average(),
-                    IsPublicUpTrending ? PublicWeightedAverageBestPurchasePrice : PublicWeightedAverageLowPurchasePrice,
+                    IsBullMarket ? PublicWeightedAverageBestPurchasePrice : PublicWeightedAverageLowPurchasePrice,
                     orderbookValuatedPrice
 //                    (PublicLastPurchasePrice + ReasonableAccountLastPurchasePrice + ReasonableAccountLastSellPrice +
 //                     PublicLastSellPrice) / 4,
