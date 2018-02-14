@@ -133,9 +133,9 @@ namespace mleader.tradingbot.Engine.Cex
             }
 
             var totalExchangeCurrencyBalance =
-            (AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
-                .Select(c => c.Value?.Total)
-                .FirstOrDefault()).GetValueOrDefault();
+                (AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
+                    .Select(c => c.Value?.Total)
+                    .FirstOrDefault()).GetValueOrDefault();
             var totalTargetCurrencyBalance = (AccountBalance?.CurrencyBalances
                 ?.Where(item => item.Key == OperatingTargetCurrency)
                 .Select(c => c.Value?.Total)
@@ -684,6 +684,10 @@ namespace mleader.tradingbot.Engine.Cex
 
             #region Draw the Graph
 
+            var isBullMarket = IsBullMarket;
+            var isBullMarketContinuable = IsBullMarketContinuable;
+            var isBearMarketContinuable = IsBearMarketContinuable;
+
             Console.WriteLine("");
             Console.ResetColor();
             Console.ForegroundColor = ConsoleColor.Blue;
@@ -702,11 +706,39 @@ namespace mleader.tradingbot.Engine.Cex
             Console.WriteLine($"\t Buying\t\t\t\t\t  Selling  \t\t\t\t");
             Console.WriteLine($"\t ========\t\t\t\t  ========\t\t\t\t");
             Console.WriteLine($"\t CEX Latest:\t{PublicLastPurchasePrice}\t\t\t  {PublicLastSellPrice}\t\t\t\t");
-            Console.WriteLine($"\t Your Latest:\t{AccountLastPurchasePrice}\t\t\t  {AccountLastSellPrice}\t\t\t\t");
-
+            Console.WriteLine($"\t Last Executed:\t{AccountLastPurchasePrice}\t\t\t  {AccountLastSellPrice}\t\t\t\t");
             Console.WriteLine(
                 $"\t Next Order:\t{(AccountNextBuyOpenOrder == null ? "N/A" : AccountNextBuyOpenOrder.Amount.ToString(CultureInfo.InvariantCulture) + AccountNextBuyOpenOrder.ExchangeCurrency)}{(AccountNextBuyOpenOrder != null ? "@" + AccountNextBuyOpenOrder.Price : "")}\t\t  " +
                 $"{(AccountNextSellOpenOrder == null ? "N/A  " : AccountNextSellOpenOrder.Amount + AccountNextSellOpenOrder.ExchangeCurrency)}{(AccountNextSellOpenOrder != null ? "@" + AccountNextSellOpenOrder.Price : "")}");
+            Console.WriteLine(
+                $"\t Last Order:\t{(AccountLastBuyOpenOrder == null ? "N/A" : AccountLastBuyOpenOrder.Amount.ToString(CultureInfo.InvariantCulture) + AccountLastBuyOpenOrder.ExchangeCurrency)}{(AccountLastBuyOpenOrder != null ? "@" + AccountLastBuyOpenOrder.Price : "")}\t\t  " +
+                $"{(AccountLastSellOpenOrder == null ? "N/A  " : AccountLastSellOpenOrder.Amount + AccountNextSellOpenOrder.ExchangeCurrency)}{(AccountLastSellOpenOrder != null ? "@" + AccountLastSellOpenOrder.Price : "")}");
+            Console.Write("\t Market Status:\t ");
+            if (isBullMarket)
+            {
+                Console.ForegroundColor = ConsoleColor.DarkGreen;
+                Console.Write("Bull Market \t\t  ");
+                if (!isBullMarketContinuable)
+                {
+                    Console.ForegroundColor = ConsoleColor.DarkRed;
+                }
+
+                Console.Write($"{(isBullMarketContinuable ? "Up" : "Down")}\t\t\t\t\n");
+                Console.ForegroundColor = ConsoleColor.Blue;
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.DarkRed;
+                Console.Write("Bear Market \t\t  ");
+                if (!isBearMarketContinuable)
+                {
+                    Console.ForegroundColor = ConsoleColor.DarkGreen;
+                }
+
+                Console.Write($"{(isBearMarketContinuable ? "Down" : "Up")}\t\t\t\t\n");
+                Console.ForegroundColor = ConsoleColor.Blue;
+            }
+
             Console.WriteLine("\n\t_____________________________________________________________________\n");
             Console.ForegroundColor = ConsoleColor.DarkGreen;
             Console.WriteLine("\n\t Buying Decision: \t\t\t  Selling Decision:");
@@ -721,40 +753,35 @@ namespace mleader.tradingbot.Engine.Cex
             if (buyingAmountAvailable &&
                 IsBuyingReserveRequirementMatched(buyingAmountInPrinciple, buyingPriceInPrinciple))
             {
-                if (!finalPortfolioValueDecreasedWhenBuying &&
-                    (!IsBullMarket || IsBullMarket && !IsBearMarketContinuable))
+                if (!finalPortfolioValueDecreasedWhenBuying)
                 {
-                    Console.BackgroundColor = ConsoleColor.DarkGreen;
-                    Console.Write(
-                        $"BUY {buyingAmountInPrinciple} {ExchangeCurrencyBalance?.Currency} ({buyingAmountInPrinciple * buyingPriceInPrinciple:N2} {TargetCurrencyBalance?.Currency})");
-                    Console.ResetColor();
-                    Console.Write("\t\t  ");
-                }
-                else
-                {
-                    if (IsBearMarketContinuable)
+                    if (!isBullMarket || isBullMarket && isBullMarketContinuable)
                     {
-                        Console.BackgroundColor = ConsoleColor.Black;
-                        Console.Write("Bear But Better Hold");
+                        Console.BackgroundColor = ConsoleColor.DarkGreen;
+                        Console.Write(
+                            $"BUY {buyingAmountInPrinciple} {ExchangeCurrencyBalance?.Currency} ({buyingAmountInPrinciple * buyingPriceInPrinciple:N2} {TargetCurrencyBalance?.Currency})");
                     }
                     else
                     {
-                        Console.BackgroundColor = ConsoleColor.DarkRed;
-                        Console.Write("Depreciation  ");
+                        Console.BackgroundColor = ConsoleColor.DarkGray;
+                        Console.Write("Better Hold");
                     }
-
-                    Console.ResetColor();
-                    Console.Write("\t\t  ");
+                }
+                else
+                {
+                    Console.BackgroundColor = ConsoleColor.DarkRed;
+                    Console.Write("Depreciation  ");
                 }
             }
             else
             {
                 Console.BackgroundColor = ConsoleColor.DarkRed;
                 Console.Write(
-                    $"{(!IsBuyingReserveRequirementMatched(buyingAmountInPrinciple, buyingPriceInPrinciple) ? $"Limited Reserve - {finalPortfolioValueWhenBuying * TradingStrategy.MinimumReservePercentageAfterInitInTargetCurrency:2} {OperatingTargetCurrency}" : buyingAmountInPrinciple > 0 ? $"Low Fund - Need {(buyingAmountInPrinciple > exchangeCurrencyLimit ? buyingAmountInPrinciple : exchangeCurrencyLimit) * buyingPriceInPrinciple:N2} {TargetCurrencyBalance.Currency}" : "Low Fund")}");
-                Console.ResetColor();
-                Console.Write("\t\t  ");
+                    $"{(!IsBuyingReserveRequirementMatched(buyingAmountInPrinciple, buyingPriceInPrinciple) || buyingAmountInPrinciple == GetMaximumBuyableAmountBasedOnReserveRatio(buyingPriceInPrinciple) ? $"Limited Reserve - {TargetCurrencyBalance.Available * TradingStrategy.MinimumReservePercentageAfterInitInTargetCurrency:N2} {OperatingTargetCurrency}" : buyingAmountInPrinciple > 0 ? $"Low Fund - Need {(buyingAmountInPrinciple > exchangeCurrencyLimit ? buyingAmountInPrinciple : exchangeCurrencyLimit) * buyingPriceInPrinciple:N2} {TargetCurrencyBalance.Currency}" : "Low Fund")}");
             }
+
+            Console.ResetColor();
+            Console.Write("\t\t  ");
 
             #endregion
 
@@ -764,40 +791,36 @@ namespace mleader.tradingbot.Engine.Cex
             if (sellingAmountAvailable &&
                 IsSellingReserveRequirementMatched(sellingAmountInPrinciple, sellingPriceInPrinciple))
             {
-                if (!finalPortfolioValueDecreasedWhenSelling &&
-                    (IsBullMarket || !IsBullMarket && !IsBullMarketContinuable))
+                if (!finalPortfolioValueDecreasedWhenSelling)
                 {
-                    Console.BackgroundColor = ConsoleColor.DarkGreen;
-                    Console.Write(
-                        $"SELL {sellingAmountInPrinciple} {ExchangeCurrencyBalance?.Currency} ({Math.Round(sellingAmountInPrinciple * sellingPriceInPrinciple, 2)} {TargetCurrencyBalance?.Currency})");
-                    Console.ResetColor();
-                    Console.Write("\n");
-                }
-                else
-                {
-                    if (IsBearMarketContinuable)
+                    if (
+                        (isBullMarket || !isBullMarket && !isBearMarketContinuable))
                     {
-                        Console.BackgroundColor = ConsoleColor.DarkRed;
-                        Console.Write("Bull But Better Hold");
+                        Console.BackgroundColor = ConsoleColor.DarkGreen;
+                        Console.Write(
+                            $"SELL {sellingAmountInPrinciple} {ExchangeCurrencyBalance?.Currency} ({Math.Round(sellingAmountInPrinciple * sellingPriceInPrinciple, 2)} {TargetCurrencyBalance?.Currency})");
                     }
                     else
                     {
-                        Console.BackgroundColor = ConsoleColor.DarkRed;
-                        Console.Write("Depreciation");
+                        Console.BackgroundColor = ConsoleColor.DarkGray;
+                        Console.Write("Better Hold");
                     }
-
-                    Console.ResetColor();
-                    Console.Write("\t\t\n");
+                }
+                else
+                {
+                    Console.BackgroundColor = ConsoleColor.DarkRed;
+                    Console.Write("Depreciation");
                 }
             }
             else
             {
                 Console.BackgroundColor = ConsoleColor.DarkRed;
                 Console.Write(
-                    $"{(!IsSellingReserveRequirementMatched(sellingAmountInPrinciple, sellingPriceInPrinciple) ? $"Limited Reserve - {(finalPortfolioValueWhenSelling / sellingPriceInPrinciple) * TradingStrategy.MinimumReservePercentageAfterInitInExchangeCurrency:N2} {OperatingExchangeCurrency}" : sellingAmountInPrinciple > 0 ? $"Low Fund - Need {(sellingAmountInPrinciple > exchangeCurrencyLimit ? sellingAmountInPrinciple : exchangeCurrencyLimit):N4} {ExchangeCurrencyBalance.Currency}" : "Low Fund")}");
-                Console.ResetColor();
-                Console.Write("\t\t\n");
+                    $"{(!IsSellingReserveRequirementMatched(sellingAmountInPrinciple, sellingPriceInPrinciple) || sellingAmountInPrinciple == GetMaximumSellableAmountBasedOnReserveRatio(sellingPriceInPrinciple) ? $"Limited Reserve - {ExchangeCurrencyBalance.Available * TradingStrategy.MinimumReservePercentageAfterInitInExchangeCurrency:N4} {OperatingExchangeCurrency}" : sellingAmountInPrinciple > 0 ? $"Low Fund - Need {(sellingAmountInPrinciple > exchangeCurrencyLimit ? sellingAmountInPrinciple : exchangeCurrencyLimit):N4} {ExchangeCurrencyBalance.Currency}" : "Low Fund")}");
             }
+
+            Console.ResetColor();
+            Console.Write("\t\t\n");
 
             #endregion
 
@@ -832,7 +855,7 @@ namespace mleader.tradingbot.Engine.Cex
                     Console.BackgroundColor = ConsoleColor.Black;
                     Console.ForegroundColor = ConsoleColor.White;
                     Console.WriteLine(
-                        "WARNING - Buying price higher than selling price - Skip current [BUY] order execution for lower risk.");
+                        $"WARNING - Buying price ({buyingPriceInPrinciple}) higher than selling price ({sellingPriceInPrinciple}) - Skip current [BUY] order execution for lower risk.");
                     SendWebhookMessage(
                         $":warning:  Buying Higher than selling - BUY: {buyingPriceInPrinciple} / SELL: {sellingPriceInPrinciple} \n" +
                         $"Skipped Order Amount In {OperatingExchangeCurrency}: {buyingAmountInPrinciple} {OperatingExchangeCurrency}\n" +
@@ -1377,7 +1400,7 @@ namespace mleader.tradingbot.Engine.Cex
                     {
                         text = message,
                         username =
-                        $"MLEADER's CEX.IO Trading Bot - {OperatingExchangeCurrency}/{OperatingTargetCurrency} "
+                            $"MLEADER's CEX.IO Trading Bot - {OperatingExchangeCurrency}/{OperatingTargetCurrency} "
                     }).Wait();
                 }
             }
@@ -1463,7 +1486,9 @@ namespace mleader.tradingbot.Engine.Cex
                                      LatestPublicSaleHistory?.Sum(item => item.Amount) &&
                                      PublicWeightedAveragePurchasePrice > PublicWeightedAverageSellPrice &&
                                      PublicWeightedAverageLowPurchasePrice > PublicWeightedAverageBestSellPrice &&
-                                     PublicWeightedAverageLowPurchasePrice > PublicWeightedAverageLowSellPrice;
+                                     PublicWeightedAverageLowPurchasePrice > PublicWeightedAverageLowSellPrice &&
+                                     (PublicLastPurchasePrice > PublicWeightedAveragePurchasePrice ||
+                                      PublicLastSellPrice > PublicWeightedAverageSellPrice);
 
         private bool IsBullMarketContinuable => IsBullMarket &&
                                                 CurrentOrderbook?.Bids?.Where(item =>
@@ -1697,9 +1722,7 @@ namespace mleader.tradingbot.Engine.Cex
                     orderbookValuatedPrice
 //                    (PublicLastSellPrice + ReasonableAccountLastSellPrice + ReasonableAccountLastPurchasePrice) / 3,
 //                    (ReasonableAccountLastSellPrice + orderbookValuatedPrice) / 2
-                }.Max() * (1 + Math.Max(AverageTradingChangeRatio,
-                               TradingStrategy.MarketChangeSensitivityRatio) *
-                           (IsBullMarket ? 1 : 0));
+                }.Max();
 
                 orderbookPriorityAsks = CurrentOrderbook?.Asks?.Where(i => i[0] <= proposedSellingPrice);
                 var exchangeCurrencyBalance =
@@ -1723,6 +1746,18 @@ namespace mleader.tradingbot.Engine.Cex
                     if (portfolioValueBasedOnOrder > currentPortfolioValue) return order[0];
                 }
 
+                proposedSellingPrice = proposedSellingPrice * (1 + (IsBullMarket
+                                                                   ? (IsBullMarketContinuable
+                                                                       ? Math.Max(AverageTradingChangeRatio,
+                                                                           TradingStrategy.MarketChangeSensitivityRatio)
+                                                                       : Math.Min(AverageTradingChangeRatio,
+                                                                           TradingStrategy.MarketChangeSensitivityRatio)
+                                                                   )
+                                                                   : IsBearMarketContinuable
+                                                                       ? 0
+                                                                       : Math.Min(AverageTradingChangeRatio,
+                                                                           TradingStrategy.MarketChangeSensitivityRatio)
+                                                               ));
 
                 return proposedSellingPrice;
             }
@@ -1788,9 +1823,30 @@ namespace mleader.tradingbot.Engine.Cex
                         Math.Floor(order[0] * (1 - BuyingFeeInPercentage) - BuyingFeeInAmount)
                         + targetCurrencyBalance.Total;
                     //i.e. still make a profit
-                    if (portfolioValueBasedOnOrder > currentPortfolioValue) return order[0];
+                    if (portfolioValueBasedOnOrder > currentPortfolioValue)
+                    {
+                        proposedPurchasePrice = order[0];
+                        break;
+                    }
+
+                    ;
                 }
 
+                proposedPurchasePrice = proposedPurchasePrice * (1 + (IsBullMarket
+                                                                     ? (IsBullMarketContinuable
+                                                                         ? Math.Max(AverageTradingChangeRatio,
+                                                                             TradingStrategy
+                                                                                 .MarketChangeSensitivityRatio)
+                                                                         : Math.Min(AverageTradingChangeRatio,
+                                                                             TradingStrategy
+                                                                                 .MarketChangeSensitivityRatio)
+                                                                     )
+                                                                     : IsBearMarketContinuable
+                                                                         ? 0
+                                                                         : -1 * Math.Min(AverageTradingChangeRatio,
+                                                                               TradingStrategy
+                                                                                   .MarketChangeSensitivityRatio)
+                                                                 ));
                 return proposedPurchasePrice;
             }
         }
