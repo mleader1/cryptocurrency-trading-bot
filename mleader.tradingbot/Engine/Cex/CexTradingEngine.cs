@@ -674,6 +674,12 @@ namespace mleader.tradingbot.Engine.Cex
                                      sellingAmountInPrinciple >= exchangeCurrencyLimit &&
                                      sellingAmountInPrinciple * sellingPriceInPrinciple >= targetCurrencyLimit;
 
+
+            var isBetterBullMarketPriceIdentified =
+                PublicLastSellPrice * (1 + AverageTradingChangeRatio) > sellingPriceInPrinciple;
+            var isBetterBearMarketplacePriceIdentified =
+                PublicLastPurchasePrice * (1 - AverageTradingChangeRatio) < buyingPriceInPrinciple;
+
             #endregion
 
             #region Draw the Graph
@@ -714,7 +720,7 @@ namespace mleader.tradingbot.Engine.Cex
             Console.ForegroundColor = ConsoleColor.White;
             if (buyingAmountAvailable && buyingReserveRequirementMatched)
             {
-                if (!finalPortfolioValueDecreasedWhenBuying)
+                if (!finalPortfolioValueDecreasedWhenBuying && !isBetterBearMarketplacePriceIdentified)
                 {
                     Console.BackgroundColor = ConsoleColor.DarkGreen;
                     Console.Write(
@@ -724,8 +730,17 @@ namespace mleader.tradingbot.Engine.Cex
                 }
                 else
                 {
-                    Console.BackgroundColor = ConsoleColor.DarkRed;
-                    Console.Write("Depreciation  ");
+                    if (isBetterBearMarketplacePriceIdentified)
+                    {
+                        Console.BackgroundColor = ConsoleColor.Black;
+                        Console.Write("Bear But Better Hold");
+                    }
+                    else
+                    {
+                        Console.BackgroundColor = ConsoleColor.DarkRed;
+                        Console.Write("Depreciation  ");
+                    }
+
                     Console.ResetColor();
                     Console.Write("\t\t  ");
                 }
@@ -746,7 +761,7 @@ namespace mleader.tradingbot.Engine.Cex
             Console.ForegroundColor = ConsoleColor.White;
             if (sellingAmountAvailable && sellingReserveRequirementMatched)
             {
-                if (!finalPortfolioValueDecreasedWhenSelling)
+                if (!finalPortfolioValueDecreasedWhenSelling && !isBetterBullMarketPriceIdentified)
                 {
                     Console.BackgroundColor = ConsoleColor.DarkGreen;
                     Console.Write(
@@ -756,8 +771,17 @@ namespace mleader.tradingbot.Engine.Cex
                 }
                 else
                 {
-                    Console.BackgroundColor = ConsoleColor.DarkRed;
-                    Console.Write("Depreciation");
+                    if (isBetterBearMarketplacePriceIdentified)
+                    {
+                        Console.BackgroundColor = ConsoleColor.DarkRed;
+                        Console.Write("Bull But Better Hold");
+                    }
+                    else
+                    {
+                        Console.BackgroundColor = ConsoleColor.DarkRed;
+                        Console.Write("Depreciation");
+                    }
+
                     Console.ResetColor();
                     Console.Write("\t\t\n");
                 }
@@ -796,7 +820,7 @@ namespace mleader.tradingbot.Engine.Cex
 
             if (buyingAmountAvailable && buyingReserveRequirementMatched &&
                 !finalPortfolioValueDecreasedWhenBuying &&
-                finalPortfolioValueWhenBuying >= TradingStrategy.StopLine)
+                finalPortfolioValueWhenBuying >= TradingStrategy.StopLine && !isBetterBearMarketplacePriceIdentified)
             {
                 if (buyingPriceInPrinciple > sellingPriceInPrinciple)
                 {
@@ -941,7 +965,7 @@ namespace mleader.tradingbot.Engine.Cex
 
             if (sellingAmountAvailable && sellingReserveRequirementMatched &&
                 !finalPortfolioValueDecreasedWhenSelling &&
-                finalPortfolioValueWhenSelling >= TradingStrategy.StopLine)
+                finalPortfolioValueWhenSelling >= TradingStrategy.StopLine && !isBetterBullMarketPriceIdentified)
             {
                 if (buyingPriceInPrinciple > sellingPriceInPrinciple)
                 {
@@ -1698,6 +1722,7 @@ namespace mleader.tradingbot.Engine.Cex
                         orderbookValuatedPrice
                     }.Average(),
                     ReasonableAccountWeightedAverageSellPrice,
+                    PublicWeightedAverageBestSellPrice,
                     orderbookValuatedPrice
 //                    (PublicLastSellPrice + ReasonableAccountLastSellPrice + ReasonableAccountLastPurchasePrice) / 3,
 //                    (ReasonableAccountLastSellPrice + orderbookValuatedPrice) / 2
