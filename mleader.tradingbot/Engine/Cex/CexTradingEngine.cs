@@ -133,9 +133,9 @@ namespace mleader.tradingbot.Engine.Cex
             }
 
             var totalExchangeCurrencyBalance =
-            (AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
-                .Select(c => c.Value?.Total)
-                .FirstOrDefault()).GetValueOrDefault();
+                (AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
+                    .Select(c => c.Value?.Total)
+                    .FirstOrDefault()).GetValueOrDefault();
             var totalTargetCurrencyBalance = (AccountBalance?.CurrencyBalances
                 ?.Where(item => item.Key == OperatingTargetCurrency)
                 .Select(c => c.Value?.Total)
@@ -664,9 +664,18 @@ namespace mleader.tradingbot.Engine.Cex
 
 
             var isBetterBullMarketPriceIdentified =
-                PublicLastSellPrice * (1 + AverageTradingChangeRatio) > sellingPriceInPrinciple;
+                Math.Abs(PublicWeightedAverageBestSellPrice * (1 + AverageTradingChangeRatio) -
+                         sellingPriceInPrinciple) /
+                sellingPriceInPrinciple > TradingStrategy.MarketChangeSensitivityRatio ||
+                Math.Abs(PublicWeightedAverageLowPurchasePrice * (1 + AverageTradingChangeRatio) -
+                         sellingPriceInPrinciple) /
+                sellingPriceInPrinciple > TradingStrategy.MarketChangeSensitivityRatio;
             var isBetterBearMarketplacePriceIdentified =
-                PublicLastPurchasePrice * (1 - AverageTradingChangeRatio) < buyingPriceInPrinciple;
+                Math.Abs(PublicWeightedAverageBestPurchasePrice * (1 - AverageTradingChangeRatio) -
+                         buyingPriceInPrinciple) /
+                buyingPriceInPrinciple > TradingStrategy.MarketChangeSensitivityRatio ||
+                Math.Abs(PublicWeightedAverageLowSellPrice * (1 - AverageTradingChangeRatio) - buyingPriceInPrinciple) /
+                buyingPriceInPrinciple > TradingStrategy.MarketChangeSensitivityRatio;
 
             #endregion
 
@@ -1388,7 +1397,7 @@ namespace mleader.tradingbot.Engine.Cex
                     {
                         text = message,
                         username =
-                        $"MLEADER's CEX.IO Trading Bot - {OperatingExchangeCurrency}/{OperatingTargetCurrency} "
+                            $"MLEADER's CEX.IO Trading Bot - {OperatingExchangeCurrency}/{OperatingTargetCurrency} "
                     }).Wait();
                 }
             }
@@ -1684,8 +1693,10 @@ namespace mleader.tradingbot.Engine.Cex
                         PublicWeightedAverageBestSellPrice,
                         orderbookValuatedPrice
                     }.Average(),
-                    ReasonableAccountWeightedAverageSellPrice,
-                    PublicWeightedAverageBestSellPrice,
+                    IsPublicUpTrending
+                        ? Math.Max(ReasonableAccountWeightedAverageSellPrice, PublicWeightedAverageSellPrice)
+                        : new[] {ReasonableAccountWeightedAverageSellPrice, PublicWeightedAverageSellPrice}.Average(),
+                    IsPublicUpTrending ? PublicWeightedAverageBestSellPrice : PublicWeightedAverageLowSellPrice,
                     orderbookValuatedPrice
 //                    (PublicLastSellPrice + ReasonableAccountLastSellPrice + ReasonableAccountLastPurchasePrice) / 3,
 //                    (ReasonableAccountLastSellPrice + orderbookValuatedPrice) / 2
@@ -1748,7 +1759,11 @@ namespace mleader.tradingbot.Engine.Cex
                         PublicWeightedAverageBestPurchasePrice,
                         orderbookValuatedPrice
                     }.Average(),
-                    ReasonableAccountWeightedAveragePurchasePrice,
+                    IsPublicUpTrending
+                        ? Math.Max(ReasonableAccountWeightedAveragePurchasePrice, PublicWeightedAveragePurchasePrice)
+                        : new[] {ReasonableAccountWeightedAveragePurchasePrice, PublicWeightedAveragePurchasePrice}
+                            .Average(),
+                    IsPublicUpTrending ? PublicWeightedAverageBestPurchasePrice : PublicWeightedAverageLowPurchasePrice,
                     orderbookValuatedPrice
 //                    (PublicLastPurchasePrice + ReasonableAccountLastPurchasePrice + ReasonableAccountLastSellPrice +
 //                     PublicLastSellPrice) / 4,
