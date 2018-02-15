@@ -849,13 +849,14 @@ namespace mleader.tradingbot.Engine.Cex
                 !finalPortfolioValueDecreasedWhenBuying &&
                 finalPortfolioValueWhenBuying >= TradingStrategy.StopLine && !IsBearMarketContinuable)
             {
-                if (buyingPriceInPrinciple > sellingPriceInPrinciple ||
-                    buyingPriceInPrinciple >= AccountWeightedAverageSellPrice)
+                if ((buyingPriceInPrinciple > sellingPriceInPrinciple ||
+                     buyingPriceInPrinciple >= AccountWeightedAverageSellPrice && AccountWeightedAverageSellPrice > 0)
+                    && !(isBullMarket && isBullMarketContinuable))
                 {
                     Console.BackgroundColor = ConsoleColor.Black;
                     Console.ForegroundColor = ConsoleColor.White;
                     Console.WriteLine(
-                        $"WARNING - Buying price ({buyingPriceInPrinciple}) higher than selling price ({sellingPriceInPrinciple}) - Skip current [BUY] order execution for lower risk.");
+                        $"WARNING - Buying price ({buyingPriceInPrinciple}) higher than selling price ({sellingPriceInPrinciple}) ({AccountWeightedAverageSellPrice}) - Skip current [BUY] order execution for lower risk.");
                     SendWebhookMessage(
                         $":warning:  Buying Higher than selling - BUY: {buyingPriceInPrinciple} / SELL: {sellingPriceInPrinciple} / AVG SELL: {AccountWeightedAverageSellPrice}\n" +
                         $"Skipped Order Amount In {OperatingExchangeCurrency}: {buyingAmountInPrinciple} {OperatingExchangeCurrency}\n" +
@@ -863,7 +864,15 @@ namespace mleader.tradingbot.Engine.Cex
                         $"Skkipped on: {DateTime.Now}");
                     Console.ResetColor();
                 }
-                else if (!isBullMarket || isBullMarket && isBullMarketContinuable)
+                else if (!(isBullMarket || !isBullMarket && !isBearMarketContinuable))
+                {
+                    Console.WriteLine("...HOLD...");
+                }
+                else if (finalPortfolioValueWhenBuying < TradingStrategy.StopLine)
+                {
+                    Console.WriteLine("...Unmatched Stop Line...");
+                }
+                else
                 {
                     var immediateExecute = false;
                     var skip = false;
@@ -997,7 +1006,9 @@ namespace mleader.tradingbot.Engine.Cex
                 finalPortfolioValueWhenSelling >= TradingStrategy.StopLine && !IsBullMarketContinuable)
             {
                 if (buyingPriceInPrinciple > sellingPriceInPrinciple ||
-                    sellingPriceInPrinciple <= AccountWeightedAveragePurchasePrice)
+                    sellingPriceInPrinciple <= AccountWeightedAveragePurchasePrice &&
+                    AccountWeightedAveragePurchasePrice > 0 &&
+                    !(!isBullMarket && isBearMarketContinuable))
                 {
                     Console.BackgroundColor = ConsoleColor.Black;
                     Console.ForegroundColor = ConsoleColor.White;
@@ -1010,7 +1021,15 @@ namespace mleader.tradingbot.Engine.Cex
                         $"Skkipped on: {DateTime.Now}");
                     Console.ResetColor();
                 }
-                else if (isBullMarket || !isBullMarket && !isBearMarketContinuable)
+                else if (!(isBullMarket || !isBullMarket && isBearMarketContinuable))
+                {
+                    Console.WriteLine("...HOLD...");
+                }
+                else if (finalPortfolioValueWhenSelling < TradingStrategy.StopLine)
+                {
+                    Console.WriteLine("...Unmatched Stop Line...");
+                }
+                else
                 {
                     var immediateExecute = false;
                     var skip = false;
