@@ -1835,18 +1835,15 @@ namespace mleader.tradingbot.Engine.Cex
 
                 proposedPurchasePrice = proposedPurchasePrice * (1 + (IsBullMarket
                                                                      ? (IsBullMarketContinuable
-                                                                         ? Math.Max(AverageTradingChangeRatio,
+                                                                         ? Math.Min(AverageTradingChangeRatio,
                                                                              TradingStrategy
                                                                                  .MarketChangeSensitivityRatio)
-                                                                         : Math.Min(AverageTradingChangeRatio,
-                                                                             TradingStrategy
-                                                                                 .MarketChangeSensitivityRatio)
-                                                                     )
+                                                                         : 0)
                                                                      : IsBearMarketContinuable
-                                                                         ? 0
-                                                                         : -1 * Math.Min(AverageTradingChangeRatio,
+                                                                         ? -1 * Math.Min(AverageTradingChangeRatio,
                                                                                TradingStrategy
                                                                                    .MarketChangeSensitivityRatio)
+                                                                         : 0
                                                                  ));
                 return proposedPurchasePrice;
             }
