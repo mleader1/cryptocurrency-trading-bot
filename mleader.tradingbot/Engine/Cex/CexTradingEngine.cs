@@ -610,22 +610,24 @@ namespace mleader.tradingbot.Engine.Cex
 
             var finalPortfolioValueWhenBuying =
                 Math.Round(
-                    ((ExchangeCurrencyBalance?.Total + buyingAmountInPrinciple +
-                      TargetCurrencyBalance?.Total / buyingPriceInPrinciple) * PublicLastSellPrice)
-                    .GetValueOrDefault(), 2);
+                    (ExchangeCurrencyBalance.Available + buyingAmountInPrinciple +
+                     (AccountOpenOrders?.Where(item => item.Type == OrderType.Buy).Sum(item => item.Amount))
+                     .GetValueOrDefault()
+                     + (AccountOpenOrders?.Where(item => item.Type == OrderType.Sell)
+                         .Sum(item => item.Amount * item.Price)).GetValueOrDefault() +
+                     TargetCurrencyBalance.Available / buyingPriceInPrinciple) * PublicLastSellPrice, 2);
             var originalPortfolioValueWhenBuying =
-                Math.Round(
-                    (ExchangeCurrencyBalance?.Total * PublicLastSellPrice + TargetCurrencyBalance?.Total)
-                    .GetValueOrDefault(), 2);
+                Math.Round(GetCurrentPortfolioEstimatedTargetValue(PublicLastSellPrice), 2);
+
             var finalPortfolioValueWhenSelling =
                 Math.Round(
-                    (ExchangeCurrencyBalance?.Total * sellingPriceInPrinciple + TargetCurrencyBalance?.Total)
+                    (ExchangeCurrencyBalance.Available * sellingPriceInPrinciple + TargetCurrencyBalance.Available +
+                     AccountOpenOrders?.Sum(item =>
+                         item.Type == OrderType.Buy ? item.Amount * sellingPriceInPrinciple : item.Amount * item.Price))
                     .GetValueOrDefault(),
                     2);
             var originalPortfolioValueWhenSelling =
-                Math.Round(
-                    (ExchangeCurrencyBalance?.Total * PublicLastPurchasePrice + TargetCurrencyBalance?.Total)
-                    .GetValueOrDefault(), 2);
+                Math.Round(GetCurrentPortfolioEstimatedTargetValue(PublicLastPurchasePrice), 2);
 
             finalPortfolioValueDecreasedWhenBuying = finalPortfolioValueWhenBuying < originalPortfolioValueWhenBuying;
             finalPortfolioValueDecreasedWhenSelling =
@@ -970,6 +972,21 @@ namespace mleader.tradingbot.Engine.Cex
                             );
                             Thread.Sleep(1000);
                             ApiRequestcrruedAllowance++;
+
+                            var invalidatedOrders = AccountOpenOrders?.Where(item =>
+                                item.Type == OrderType.Buy && item.Price < buyingPriceInPrinciple);
+                            if (invalidatedOrders?.Count() > 0)
+                            {
+                                Console.BackgroundColor = ConsoleColor.DarkRed;
+                                Console.ForegroundColor = ConsoleColor.White;
+                                Console.WriteLine("Cancelling open orders that have lower buying prices");
+                                foreach (var invalidatedOrder in invalidatedOrders)
+                                {
+                                    await CancelOrderAsync(invalidatedOrder);
+                                }
+
+                                Console.ResetColor();
+                            }
                         }
                         else
                         {
@@ -1128,6 +1145,21 @@ namespace mleader.tradingbot.Engine.Cex
                             );
                             Thread.Sleep(1000);
                             ApiRequestcrruedAllowance++;
+
+                            var invalidatedOrders = AccountOpenOrders?.Where(item =>
+                                item.Type == OrderType.Sell && item.Price > sellingPriceInPrinciple);
+                            if (invalidatedOrders?.Count() > 0)
+                            {
+                                Console.BackgroundColor = ConsoleColor.DarkRed;
+                                Console.ForegroundColor = ConsoleColor.White;
+                                Console.WriteLine("Cancelling open orders that have higher sselling prices");
+                                foreach (var invalidatedOrder in invalidatedOrders)
+                                {
+                                    await CancelOrderAsync(invalidatedOrder);
+                                }
+
+                                Console.ResetColor();
+                            }
                         }
                         else
                         {
@@ -1276,21 +1308,46 @@ namespace mleader.tradingbot.Engine.Cex
 
         private decimal GetMaximumBuyableAmountBasedOnReserveRatio(decimal buyingPriceInPrinciple)
         {
-            var maxAmount = TargetCurrencyBalance.Available *
+            var maxAmount = GetCurrentPortfolioEstimatedTargetValue(buyingPriceInPrinciple) *
                             (1 - TradingStrategy.MinimumReservePercentageAfterInitInTargetCurrency) /
                             buyingPriceInPrinciple *
                             (1 - BuyingFeeInPercentage) - BuyingFeeInAmount;
-
+            if (maxAmount > TargetCurrencyBalance.Available)
+                maxAmount = TargetCurrencyBalance.Available;
             return Math.Truncate(maxAmount * 100000000) / 100000000;
         }
 
         private decimal GetMaximumSellableAmountBasedOnReserveRatio(decimal sellingPriceInPrinciple)
 
         {
-            var maxAmount = ExchangeCurrencyBalance.Available *
+            var maxAmount = GetCurrentPortfolioEstimatedExchangeValue(sellingPriceInPrinciple) *
                             (1 - TradingStrategy.MinimumReservePercentageAfterInitInExchangeCurrency) *
                             (1 - SellingFeeInPercentage) - SellingFeeInAmount;
+            if (maxAmount > ExchangeCurrencyBalance.Available)
+                maxAmount = ExchangeCurrencyBalance.Available;
             return maxAmount;
+        }
+
+        private decimal GetCurrentPortfolioEstimatedExchangeValue(decimal exchangePrice)
+        {
+            if (exchangePrice <= 0) throw new InvalidOperationException();
+
+            return ExchangeCurrencyBalance.Available + (AccountOpenOrders
+                       ?.Where(item => item.Type == OrderType.Sell)
+                       .Sum(item => item.Amount * item.Price)).GetValueOrDefault() +
+                   TargetCurrencyBalance.Available / exchangePrice + (AccountOpenOrders
+                       ?.Where(item => item.Type == OrderType.Buy).Sum(item => item.Amount * item.Price))
+                   .GetValueOrDefault();
+        }
+
+        private decimal GetCurrentPortfolioEstimatedTargetValue(decimal exchangePrice)
+        {
+            if (exchangePrice <= 0) throw new InvalidCastException();
+            return ExchangeCurrencyBalance.Available * exchangePrice +
+                   (AccountOpenOrders?.Where(item => item.Type == OrderType.Sell).Sum(item => item.Amount * item.Price))
+                   .GetValueOrDefault() + TargetCurrencyBalance.Available + (AccountOpenOrders
+                       ?.Where(item => item.Type == OrderType.Buy).Sum(item => item.Amount * item.Price))
+                   .GetValueOrDefault();
         }
 
         private bool IsSellingReserveRequirementMatched(decimal sellingAmountInPrinciple,
