@@ -66,6 +66,13 @@ namespace mleader.tradingbot.Engine.Cex
         public DateTime LastTimeBuyOrderCancellation { get; set; }
         public DateTime LastTimeSellOrderCancellation { get; set; }
 
+        public decimal TradingStartBalanceInExchangeCurrency { get; set; }
+        public decimal TradingStartBalanceInTargetCurrency { get; set; }
+        public decimal TradingStartValueInExchangeCurrency { get; set; }
+        public decimal TradingStartValueInTargetCurrency { get; set; }
+        public DateTime TradingStartTime { get; set; }
+
+
         public CexTradingEngine(ExchangeApiConfig apiConfig, string exchangeCurrency, string targetCurrency,
             ITradingStrategy strategy)
         {
@@ -191,6 +198,16 @@ namespace mleader.tradingbot.Engine.Cex
                 InitialSellingCapInExchangeCurrency > 0
                     ? totalExchangeCurrencyBalance / InitialSellingCapInExchangeCurrency
                     : 0);
+
+
+            TradingStartBalanceInExchangeCurrency = ExchangeCurrencyBalance.Total;
+            TradingStartBalanceInTargetCurrency = TargetCurrencyBalance.Total;
+
+            TradingStartValueInExchangeCurrency =
+                ExchangeCurrencyBalance.Total + TargetCurrencyBalance.Total / PublicLastSellPrice;
+            TradingStartValueInTargetCurrency =
+                TargetCurrencyBalance.Total + ExchangeCurrencyBalance.Total * PublicLastPurchasePrice;
+            TradingStartTime = DateTime.Now;
         }
 
         public Task StartAsync()
@@ -566,15 +583,12 @@ namespace mleader.tradingbot.Engine.Cex
             else
             {
                 buyingAmountInPrinciple =
-                    TradingStrategy.OrderCapPercentageAfterInit * GetPortfolioValueInExchangeCurrency(
-                        ExchangeCurrencyBalance.Available,
-                        TargetCurrencyBalance.Available, buyingPriceInPrinciple) *
+                    TradingStrategy.OrderCapPercentageAfterInit *
+                    GetCurrentPortfolioEstimatedTargetValue(buyingPriceInPrinciple) / buyingPriceInPrinciple *
                     (1 - BuyingFeeInPercentage) - BuyingFeeInAmount;
 
                 sellingAmountInPrinciple = TradingStrategy.OrderCapPercentageAfterInit *
-                                           GetPortfolioValueInExchangeCurrency(
-                                               ExchangeCurrencyBalance.Available,
-                                               TargetCurrencyBalance.Available, sellingPriceInPrinciple) *
+                                           GetCurrentPortfolioEstimatedExchangeValue(sellingPriceInPrinciple) *
                                            (1 - SellingFeeInPercentage) - SellingFeeInAmount;
             }
 
@@ -610,12 +624,12 @@ namespace mleader.tradingbot.Engine.Cex
 
             var finalPortfolioValueWhenBuying =
                 Math.Round(
-                    (ExchangeCurrencyBalance.Available + buyingAmountInPrinciple +
-                     (AccountOpenOrders?.Where(item => item.Type == OrderType.Buy).Sum(item => item.Amount))
-                     .GetValueOrDefault()
-                     + (AccountOpenOrders?.Where(item => item.Type == OrderType.Sell)
-                         .Sum(item => item.Amount * item.Price)).GetValueOrDefault() +
-                     TargetCurrencyBalance.Available / buyingPriceInPrinciple) * PublicLastSellPrice, 2);
+                    (ExchangeCurrencyBalance.Available + buyingAmountInPrinciple) * buyingPriceInPrinciple +
+                    (AccountOpenOrders?.Where(item => item.Type == OrderType.Buy).Sum(item => item.Amount))
+                    .GetValueOrDefault() * PublicLastSellPrice
+                    + (AccountOpenOrders?.Where(item => item.Type == OrderType.Sell)
+                        .Sum(item => item.Amount * item.Price)).GetValueOrDefault() +
+                    TargetCurrencyBalance.Available, 2);
             var originalPortfolioValueWhenBuying =
                 Math.Round(GetCurrentPortfolioEstimatedTargetValue(PublicLastSellPrice), 2);
 
@@ -699,9 +713,9 @@ namespace mleader.tradingbot.Engine.Cex
             Console.WriteLine("\t                       +++++++++++++++++++                          ");
             Console.ForegroundColor = ConsoleColor.DarkMagenta;
             Console.WriteLine(
-                $"\n\t {ExchangeCurrencyBalance?.Currency}: {ExchangeCurrencyBalance?.Available}{(ExchangeCurrencyBalance?.InOrders > 0 ? " \t\t\t" + ExchangeCurrencyBalance?.InOrders + "\tIn Orders" : "")}" +
-                $"\n\t {TargetCurrencyBalance?.Currency}: {Math.Round((TargetCurrencyBalance?.Available).GetValueOrDefault(), 2)}{(TargetCurrencyBalance?.InOrders > 0 ? " \t\t\t" + Math.Round((TargetCurrencyBalance?.InOrders).GetValueOrDefault(), 2) + "\tIn Orders" : "")}\t\t\t\t");
-            Console.WriteLine($"\n\t Execution Time: {DateTime.Now}");
+                $"\n\t {ExchangeCurrencyBalance?.Currency}: {ExchangeCurrencyBalance?.Available}{(ExchangeCurrencyBalance?.InOrders > 0 ? " \t\t\t" + ExchangeCurrencyBalance?.InOrders + " In Orders" : "")}" +
+                $"\n\t {TargetCurrencyBalance?.Currency}: {Math.Round((TargetCurrencyBalance?.Available).GetValueOrDefault(), 2)}{(TargetCurrencyBalance?.InOrders > 0 ? " \t\t\t" + Math.Round((TargetCurrencyBalance?.InOrders).GetValueOrDefault(), 2) + " In Orders" : "")}\t\t\t\t");
+            Console.WriteLine($"\n\t Start Time: {TradingStartTime} \t\n\t Current Time: {DateTime.Now}\n\n");
             Console.ForegroundColor = ConsoleColor.Blue;
 
             Console.WriteLine("\n\t===================Buy / Sell Price Recommendation===================\n");
@@ -715,6 +729,7 @@ namespace mleader.tradingbot.Engine.Cex
             Console.WriteLine(
                 $"\t Last Order:\t{(AccountLastBuyOpenOrder == null ? "N/A" : AccountLastBuyOpenOrder.Amount.ToString(CultureInfo.InvariantCulture) + AccountLastBuyOpenOrder.ExchangeCurrency)}{(AccountLastBuyOpenOrder != null ? "@" + AccountLastBuyOpenOrder.Price : "")}\t\t  " +
                 $"{(AccountLastSellOpenOrder == null ? "N/A  " : AccountLastSellOpenOrder.Amount + AccountNextSellOpenOrder.ExchangeCurrency)}{(AccountLastSellOpenOrder != null ? "@" + AccountLastSellOpenOrder.Price : "")}");
+
             Console.Write("\t Market Status:\t ");
             if (isBullMarket)
             {
@@ -757,16 +772,16 @@ namespace mleader.tradingbot.Engine.Cex
             {
                 if (!finalPortfolioValueDecreasedWhenBuying)
                 {
-                    if (!isBullMarket || isBullMarket && isBullMarketContinuable)
+                    if (isBullMarket && isBullMarketContinuable || !isBullMarket && isBearMarketContinuable)
+                    {
+                        Console.BackgroundColor = ConsoleColor.DarkGray;
+                        Console.Write("Better Hold");
+                    }
+                    else
                     {
                         Console.BackgroundColor = ConsoleColor.DarkGreen;
                         Console.Write(
                             $"BUY {buyingAmountInPrinciple} {ExchangeCurrencyBalance?.Currency} ({buyingAmountInPrinciple * buyingPriceInPrinciple:N2} {TargetCurrencyBalance?.Currency})");
-                    }
-                    else
-                    {
-                        Console.BackgroundColor = ConsoleColor.DarkGray;
-                        Console.Write("Better Hold");
                     }
                 }
                 else
@@ -795,16 +810,16 @@ namespace mleader.tradingbot.Engine.Cex
             {
                 if (!finalPortfolioValueDecreasedWhenSelling)
                 {
-                    if (isBullMarket || !isBullMarket && !isBearMarketContinuable)
+                    if (isBullMarket && isBullMarketContinuable || !isBullMarket && isBearMarketContinuable)
+                    {
+                        Console.BackgroundColor = ConsoleColor.DarkGray;
+                        Console.Write("Better Hold");
+                    }
+                    else
                     {
                         Console.BackgroundColor = ConsoleColor.DarkGreen;
                         Console.Write(
                             $"SELL {sellingAmountInPrinciple} {ExchangeCurrencyBalance?.Currency} ({Math.Round(sellingAmountInPrinciple * sellingPriceInPrinciple, 2)} {TargetCurrencyBalance?.Currency})");
-                    }
-                    else
-                    {
-                        Console.BackgroundColor = ConsoleColor.DarkGray;
-                        Console.Write("Better Hold");
                     }
                 }
                 else
@@ -825,14 +840,47 @@ namespace mleader.tradingbot.Engine.Cex
 
             #endregion
 
+            #region Drawing Estimates
+
             Console.ResetColor();
             Console.WriteLine("\n\n\t Portfolio Estimates (A.I.):");
             Console.WriteLine(
-                $"\t Current:\t{originalPortfolioValueWhenBuying} {TargetCurrencyBalance?.Currency}\t\t  {originalPortfolioValueWhenSelling} {TargetCurrencyBalance?.Currency}\t\t\t\t");
+                $"\tOriginal Value On Start: {Math.Round(TradingStartValueInExchangeCurrency, 8)} {OperatingExchangeCurrency} ({TradingStartValueInTargetCurrency:N2} {OperatingTargetCurrency})\n");
             Console.WriteLine(
-                $"\t After  :\t{finalPortfolioValueWhenBuying} {TargetCurrencyBalance?.Currency}\t\t  {finalPortfolioValueWhenSelling} {TargetCurrencyBalance?.Currency}\t\t\t\t");
+                $"\t Current:   \t\t{originalPortfolioValueWhenBuying:N2} {TargetCurrencyBalance?.Currency}\t\t  {originalPortfolioValueWhenSelling:N2} {TargetCurrencyBalance?.Currency}\t\t\t\t");
             Console.WriteLine(
-                $"\t Difference:\t{finalPortfolioValueWhenBuying - originalPortfolioValueWhenBuying} {TargetCurrencyBalance?.Currency}\t\t  {finalPortfolioValueWhenSelling - originalPortfolioValueWhenSelling} {TargetCurrencyBalance?.Currency} ");
+                $"\t After  :\t\t{finalPortfolioValueWhenBuying:N2} {TargetCurrencyBalance?.Currency}\t\t  {finalPortfolioValueWhenSelling:N2} {TargetCurrencyBalance?.Currency}\t\t\t\t");
+            Console.WriteLine(
+                $"\t Order Difference:\t{finalPortfolioValueWhenBuying - originalPortfolioValueWhenBuying:N2} {TargetCurrencyBalance?.Currency}\t\t  {finalPortfolioValueWhenSelling - originalPortfolioValueWhenSelling:N2} {TargetCurrencyBalance?.Currency} ");
+
+            Console.Write(
+                $"\n\t Profit Current:\t");
+            Console.ForegroundColor = originalPortfolioValueWhenBuying - TradingStartValueInTargetCurrency > 0
+                ? ConsoleColor.DarkGreen
+                : ConsoleColor.DarkRed;
+            Console.Write(
+                $"{originalPortfolioValueWhenBuying - TradingStartValueInTargetCurrency:N2} {TargetCurrencyBalance?.Currency}\t\t  ");
+            Console.ForegroundColor = originalPortfolioValueWhenSelling - TradingStartValueInTargetCurrency > 0
+                ? ConsoleColor.DarkGreen
+                : ConsoleColor.DarkRed;
+
+            Console.Write(
+                $"{originalPortfolioValueWhenSelling - TradingStartValueInTargetCurrency:N2} {TargetCurrencyBalance?.Currency}\n");
+            Console.ResetColor();
+            Console.Write(
+                $"\t Profit After:\t\t");
+            Console.ForegroundColor = finalPortfolioValueWhenBuying - TradingStartValueInTargetCurrency > 0
+                ? ConsoleColor.DarkGreen
+                : ConsoleColor.DarkRed;
+            Console.Write(
+                $"{finalPortfolioValueWhenBuying - TradingStartValueInTargetCurrency:N2} {TargetCurrencyBalance?.Currency}\t\t  ");
+            Console.ForegroundColor = finalPortfolioValueWhenSelling - TradingStartValueInTargetCurrency > 0
+                ? ConsoleColor.DarkGreen
+                : ConsoleColor.DarkRed;
+            Console.Write(
+                $"{finalPortfolioValueWhenSelling - TradingStartValueInTargetCurrency:N2} {TargetCurrencyBalance?.Currency} ");
+            Console.ResetColor();
+
             Console.ForegroundColor = ConsoleColor.DarkBlue;
             Console.WriteLine(
                 $"\n\t Stop Line:\t{TradingStrategy.StopLine} {TargetCurrencyBalance.Currency}\t\t  ");
@@ -841,6 +889,8 @@ namespace mleader.tradingbot.Engine.Cex
             Console.WriteLine("\n\t===============================****==================================\n");
             Console.ResetColor();
             Console.WriteLine("");
+
+            #endregion
 
             #endregion
 
@@ -866,7 +916,8 @@ namespace mleader.tradingbot.Engine.Cex
                         $"Skkipped on: {DateTime.Now}");
                     Console.ResetColor();
                 }
-                else if (!(isBullMarket || !isBullMarket && !isBearMarketContinuable))
+                else if (isBullMarket && isBullMarketContinuable || !isBullMarket && isBearMarketContinuable)
+
                 {
                     Console.WriteLine("...HOLD...");
                 }
@@ -1038,7 +1089,7 @@ namespace mleader.tradingbot.Engine.Cex
                         $"Skkipped on: {DateTime.Now}");
                     Console.ResetColor();
                 }
-                else if (!(isBullMarket || !isBullMarket && isBearMarketContinuable))
+                else if (isBullMarket && isBullMarketContinuable || !isBullMarket && isBearMarketContinuable)
                 {
                     Console.WriteLine("...HOLD...");
                 }

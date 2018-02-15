@@ -11,6 +11,12 @@ namespace mleader.tradingbot.Engine
         ExchangeApiConfig ApiConfig { get; set; }
         ITradingStrategy TradingStrategy { get; }
 
+        decimal TradingStartBalanceInExchangeCurrency { get; set; }
+        decimal TradingStartBalanceInTargetCurrency { get; set; }
+        decimal TradingStartValueInExchangeCurrency { get; set; }
+        decimal TradingStartValueInTargetCurrency { get; set; }
+        
+
         string ReserveCurrency { get; set; }
         Dictionary<string, decimal> MinimumCurrencyOrderAmount { get; set; }
 
@@ -26,6 +32,7 @@ namespace mleader.tradingbot.Engine
         IOrder AccountLastBuyOpenOrder { get; }
         IOrder AccountLastSellOpenOrder { get; }
 
+        DateTime TradingStartTime { get; set; }
         DateTime LastTimeBuyOrderCancellation { get; set; }
         DateTime LastTimeSellOrderCancellation { get; set; }
 
