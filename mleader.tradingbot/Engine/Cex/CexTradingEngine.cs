@@ -65,6 +65,9 @@ namespace mleader.tradingbot.Engine.Cex
         private int InputTimeout = 5000;
         public DateTime LastTimeBuyOrderCancellation { get; set; }
         public DateTime LastTimeSellOrderCancellation { get; set; }
+        public DateTime LastTimeBuyOrderExecution { get; set; }
+        public DateTime LastTimeSellOrderExecution { get; set; }
+
 
         public decimal TradingStartBalanceInExchangeCurrency { get; set; }
         public decimal TradingStartBalanceInTargetCurrency { get; set; }
@@ -1023,7 +1026,7 @@ namespace mleader.tradingbot.Engine.Cex
                             );
                             Thread.Sleep(1000);
                             ApiRequestcrruedAllowance++;
-
+                            LastTimeBuyOrderExecution = DateTime.Now;
                             var invalidatedOrders = AccountOpenOrders?.Where(item =>
                                 item.Type == OrderType.Buy && item.Price < buyingPriceInPrinciple);
                             if (invalidatedOrders?.Count() > 0)
@@ -1196,7 +1199,7 @@ namespace mleader.tradingbot.Engine.Cex
                             );
                             Thread.Sleep(1000);
                             ApiRequestcrruedAllowance++;
-
+                            LastTimeSellOrderExecution = DateTime.Now;
                             var invalidatedOrders = AccountOpenOrders?.Where(item =>
                                 item.Type == OrderType.Sell && item.Price > sellingPriceInPrinciple);
                             if (invalidatedOrders?.Count() > 0)
@@ -1246,7 +1249,10 @@ namespace mleader.tradingbot.Engine.Cex
             {
                 //Test whether to drop last buy order when no historical buy transaction in the current period
                 if (AccountLastBuyOpenOrder != null && AccountLastPurchasePrice <= 0 &&
-                    CurrentOrderbook.BuyTotal <= CurrentOrderbook.SellTotal * PublicLastSellPrice)
+                    CurrentOrderbook.BuyTotal <= CurrentOrderbook.SellTotal * PublicLastSellPrice &&
+                    LastTimeBuyOrderExecution.AddMinutes(
+                        Math.Max(TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision,
+                            TradingStrategy.MinutesOfPublicHistoryOrderForPurchaseDecision) * 2) < DateTime.Now)
                 {
                     // only do it when changes are significant (i.e. can't easily purchase)
                     if (
@@ -1296,7 +1302,10 @@ namespace mleader.tradingbot.Engine.Cex
 
                 //Test whether to drop last sell order when no historical sell transaction in the current period
                 if (AccountLastSellOpenOrder != null && AccountLastSellPrice <= 0 && CurrentOrderbook.BuyTotal >=
-                    CurrentOrderbook.SellTotal * PublicLastPurchasePrice * (1 - AverageTradingChangeRatio))
+                    CurrentOrderbook.SellTotal * PublicLastPurchasePrice * (1 - AverageTradingChangeRatio) &&
+                    LastTimeSellOrderExecution.AddMinutes(
+                        Math.Max(TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision,
+                            TradingStrategy.MinutesOfPublicHistoryOrderForSellDecision) * 2) < DateTime.Now)
                 {
                     // only do it when changes are significant (i.e. can't easily sell)
                     if (

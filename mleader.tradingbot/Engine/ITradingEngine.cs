@@ -35,6 +35,8 @@ namespace mleader.tradingbot.Engine
         DateTime TradingStartTime { get; set; }
         DateTime LastTimeBuyOrderCancellation { get; set; }
         DateTime LastTimeSellOrderCancellation { get; set; }
+        DateTime LastTimeBuyOrderExecution { get; set; }
+        DateTime LastTimeSellOrderExecution { get; set; }
 
 
         Task<AccountBalance> GetAccountBalanceAsync();
