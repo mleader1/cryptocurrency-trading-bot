@@ -109,6 +109,31 @@ namespace mleader.tradingbot
             var sensitivityRatio = NumericUtils.GetDecimalValueFromObject(Console.ReadLine());
             if (sensitivityRatio <= 0) sensitivityRatio = 0.015m;
 
+            Console.WriteLine("Minimum Reserve In Target Currency: (default 0.2)");
+            var minimumReservePercentageAfterInitInTargetCurrency =
+                NumericUtils.GetDecimalValueFromObject(Console.ReadLine());
+            if (minimumReservePercentageAfterInitInTargetCurrency <= 0)
+                minimumReservePercentageAfterInitInTargetCurrency = 0.2m;
+
+            Console.WriteLine("Minimum Reserve In Exchange Currency: (default 0.2)");
+            var minimumReservePercentageAfterInitInExchangeCurrency =
+                NumericUtils.GetDecimalValueFromObject(Console.ReadLine());
+            if (minimumReservePercentageAfterInitInExchangeCurrency <= 0)
+                minimumReservePercentageAfterInitInExchangeCurrency = 0.2m;
+
+            Console.WriteLine("Order Cap Percentage On Init: (default 0.25)");
+            var orderCapPercentageOnInit =
+                NumericUtils.GetDecimalValueFromObject(Console.ReadLine());
+            if (orderCapPercentageOnInit <= 0)
+                orderCapPercentageOnInit = 0.25m;
+
+            Console.WriteLine("Order Cap Percentage On Init: (default 0.6)");
+            var orderCapPercentageAfterInit =
+                NumericUtils.GetDecimalValueFromObject(Console.ReadLine());
+            if (orderCapPercentageAfterInit <= 0)
+                orderCapPercentageAfterInit = 0.6m;
+
+
             bool autoExecution;
             Console.ForegroundColor = ConsoleColor.White;
             Console.BackgroundColor = ConsoleColor.DarkGreen;
@@ -123,10 +148,11 @@ namespace mleader.tradingbot
                 MinutesOfAccountHistoryOrderForSellDecision = accountOrderHistoryForSellingDecision,
                 MinutesOfPublicHistoryOrderForPurchaseDecision = publicOrderHistoryForBuyingDecision,
                 MinutesOfPublicHistoryOrderForSellDecision = publicOrderHistoryForSellingDecision,
-                MinimumReservePercentageAfterInitInTargetCurrency = 0.1m,
-                MinimumReservePercentageAfterInitInExchangeCurrency = 0.1m,
-                OrderCapPercentageAfterInit = 0.6m,
-                OrderCapPercentageOnInit = 0.25m,
+                MinimumReservePercentageAfterInitInTargetCurrency = minimumReservePercentageAfterInitInTargetCurrency,
+                MinimumReservePercentageAfterInitInExchangeCurrency =
+                    minimumReservePercentageAfterInitInExchangeCurrency,
+                OrderCapPercentageAfterInit = orderCapPercentageAfterInit,
+                OrderCapPercentageOnInit = orderCapPercentageOnInit,
                 AutoDecisionExecution = autoExecution,
                 StopLine = stopLine,
                 MarketChangeSensitivityRatio = sensitivityRatio

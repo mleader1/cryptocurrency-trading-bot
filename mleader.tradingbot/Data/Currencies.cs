@@ -15,6 +15,7 @@ namespace mleader.tradingbot.Data
         public const string EUR = "EUR";
         public const string GBP = "GBP";
         public const string RUB = "RUB";
+        public const string XRP = "XRP";
 
 
         public static List<string> SupportedCurrencies => new List<string>
@@ -24,6 +25,7 @@ namespace mleader.tradingbot.Data
             ETH,
             LTC,
             DASH,
+            XRP,
             ZEC,
             USD,
             EUR,

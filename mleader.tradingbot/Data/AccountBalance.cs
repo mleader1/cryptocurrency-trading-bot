@@ -17,6 +17,7 @@ namespace mleader.tradingbot.Data
         public AccountBalanceItem BalanceEUR { get; set; }
         public AccountBalanceItem BalanceGBP { get; set; }
         public AccountBalanceItem BalanceRUB { get; set; }
+        public AccountBalanceItem BalanceXRP { get; set; }
 
 
         public Dictionary<string, AccountBalanceItem> CurrencyBalances
@@ -30,6 +31,7 @@ namespace mleader.tradingbot.Data
                     {"ETH", BalanceETH},
                     {"LTC", BalanceLTC},
                     {"DASH", BalanceDASH},
+                    {"XRP", BalanceXRP},
                     {"ZEC", BalanceZEC},
                     {"USD", BalanceUSD},
                     {"EUR", BalanceEUR},
