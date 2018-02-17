@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -598,10 +599,8 @@ namespace mleader.tradingbot.Engine.Cex
                                                                                     BuyingFeeInAmount) /
                                                                                    (1 - BuyingFeeInPercentage)))
                                                                            .GetValueOrDefault();
-                                                                       item.Value.InOrders =
-                                                                           newInOrder < item.Value.InOrders
-                                                                               ? newInOrder
-                                                                               : item.Value.InOrders;
+                                                                       item.Value.InOrders = Math.Min(newInOrder,
+                                                                           item.Value.InOrders);
                                                                    }
 
                                                                    return item.Value;
@@ -1095,7 +1094,7 @@ namespace mleader.tradingbot.Engine.Cex
                     }
 
 
-                    if (immediateExecute & !skip)
+                    if (immediateExecute & !skip )
                     {
                         //execute buy order
                         var nonce = GetNonce();
@@ -1541,24 +1540,22 @@ namespace mleader.tradingbot.Engine.Cex
         {
             if (exchangePrice <= 0) throw new InvalidOperationException();
 
-            return ExchangeCurrencyBalance.Available + (AccountOpenOrders
-                       ?.Where(item => item.Type == OrderType.Sell)
-                       .Sum(item => item.Amount)).GetValueOrDefault() +
-                   TargetCurrencyBalance.Available / exchangePrice + (AccountOpenOrders
-                       ?.Where(item => item.Type == OrderType.Buy)
-                       .Sum(item => item.Amount * item.Price / exchangePrice))
-                   .GetValueOrDefault();
+//            return ExchangeCurrencyBalance.Available + (AccountOpenOrders
+//                       ?.Where(item => item.Type == OrderType.Sell)
+//                       .Sum(item => item.Amount)).GetValueOrDefault() +
+//                   TargetCurrencyBalance.Available / exchangePrice + (AccountOpenOrders
+//                       ?.Where(item => item.Type == OrderType.Buy)
+//                       .Sum(item => item.Amount * item.Price / exchangePrice))
+//                   .GetValueOrDefault();
+            return ExchangeCurrencyBalance.Total + TargetCurrencyBalance.Total / exchangePrice;
         }
 
         private decimal GetCurrentPortfolioEstimatedTargetValue(decimal exchangePrice)
         {
             if (exchangePrice <= 0) throw new InvalidCastException();
-            return ExchangeCurrencyBalance.Available * exchangePrice +
-                   (AccountOpenOrders?.Where(item => item.Type == OrderType.Sell)
-                       .Sum(item => item.Amount * exchangePrice))
-                   .GetValueOrDefault() + TargetCurrencyBalance.Available + (AccountOpenOrders
-                       ?.Where(item => item.Type == OrderType.Buy).Sum(item => item.Amount * item.Price))
-                   .GetValueOrDefault();
+
+            return ExchangeCurrencyBalance.Total * exchangePrice +
+                   +TargetCurrencyBalance.Total;
         }
 
         private bool IsSellingReserveRequirementMatched(decimal sellingAmountInPrinciple,
