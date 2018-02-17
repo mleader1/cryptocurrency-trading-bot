@@ -571,12 +571,7 @@ namespace mleader.tradingbot.Engine.Cex
                                                                      if (item.Value != null)
                                                                      {
                                                                          item.Value.InOrders = (AccountOpenOrders
-                                                                                 ?.Where(i =>
-                                                                                     i.ExchangeCurrency ==
-                                                                                     OperatingExchangeCurrency &&
-                                                                                     i.TargetCurrency ==
-                                                                                     OperatingTargetCurrency &&
-                                                                                     i.Type == OrderType.Sell)
+                                                                                 ?.Where(i => i.Type == OrderType.Sell)
                                                                                  .Sum(i => i.Amount))
                                                                              .GetValueOrDefault();
                                                                      }
@@ -595,16 +590,18 @@ namespace mleader.tradingbot.Engine.Cex
                                                                {
                                                                    if (item.Value != null)
                                                                    {
-                                                                       item.Value.InOrders = (AccountOpenOrders
+                                                                       var newInOrder = (AccountOpenOrders
                                                                                ?.Where(i =>
-                                                                                   i.ExchangeCurrency ==
-                                                                                   OperatingExchangeCurrency &&
-                                                                                   i.TargetCurrency ==
-                                                                                   OperatingTargetCurrency &&
                                                                                    i.Type == OrderType.Buy)
                                                                                .Sum(i =>
-                                                                                   i.Amount * PublicLastSellPrice))
+                                                                                   (i.Amount * i.Price +
+                                                                                    BuyingFeeInAmount) /
+                                                                                   (1 - BuyingFeeInPercentage)))
                                                                            .GetValueOrDefault();
+                                                                       item.Value.InOrders =
+                                                                           newInOrder < item.Value.InOrders
+                                                                               ? newInOrder
+                                                                               : item.Value.InOrders;
                                                                    }
 
                                                                    return item.Value;
@@ -1546,9 +1543,10 @@ namespace mleader.tradingbot.Engine.Cex
 
             return ExchangeCurrencyBalance.Available + (AccountOpenOrders
                        ?.Where(item => item.Type == OrderType.Sell)
-                       .Sum(item => item.Amount * item.Price)).GetValueOrDefault() +
+                       .Sum(item => item.Amount)).GetValueOrDefault() +
                    TargetCurrencyBalance.Available / exchangePrice + (AccountOpenOrders
-                       ?.Where(item => item.Type == OrderType.Buy).Sum(item => item.Amount * item.Price))
+                       ?.Where(item => item.Type == OrderType.Buy)
+                       .Sum(item => item.Amount * item.Price / exchangePrice))
                    .GetValueOrDefault();
         }
 
@@ -1556,7 +1554,8 @@ namespace mleader.tradingbot.Engine.Cex
         {
             if (exchangePrice <= 0) throw new InvalidCastException();
             return ExchangeCurrencyBalance.Available * exchangePrice +
-                   (AccountOpenOrders?.Where(item => item.Type == OrderType.Sell).Sum(item => item.Amount * item.Price))
+                   (AccountOpenOrders?.Where(item => item.Type == OrderType.Sell)
+                       .Sum(item => item.Amount * exchangePrice))
                    .GetValueOrDefault() + TargetCurrencyBalance.Available + (AccountOpenOrders
                        ?.Where(item => item.Type == OrderType.Buy).Sum(item => item.Amount * item.Price))
                    .GetValueOrDefault();
