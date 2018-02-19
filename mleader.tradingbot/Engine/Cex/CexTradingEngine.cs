@@ -68,6 +68,9 @@ namespace mleader.tradingbot.Engine.Cex
         public DateTime LastTimeSellOrderCancellation { get; set; }
         public DateTime LastTimeBuyOrderExecution { get; set; }
         public DateTime LastTimeSellOrderExecution { get; set; }
+        public DateTime LastCaculationTime { get; set; }
+        public DateTime TradingSessionInHours { get; set; }
+        public decimal TradingValueBleedRatio { get; set; }
 
 
         public decimal TradingStartBalanceInExchangeCurrency { get; set; }
@@ -87,14 +90,16 @@ namespace mleader.tradingbot.Engine.Cex
             {
                 MinutesOfAccountHistoryOrderForPurchaseDecision = 60,
                 MinutesOfAccountHistoryOrderForSellDecision = 60,
-                MinutesOfPublicHistoryOrderForPurchaseDecision = 120,
-                MinutesOfPublicHistoryOrderForSellDecision = 120,
+                MinutesOfPublicHistoryOrderForPurchaseDecision = 30,
+                MinutesOfPublicHistoryOrderForSellDecision = 30,
                 MinimumReservePercentageAfterInitInTargetCurrency = 0.1m,
                 MinimumReservePercentageAfterInitInExchangeCurrency = 0.1m,
                 OrderCapPercentageAfterInit = 0.6m,
                 OrderCapPercentageOnInit = 0.25m,
                 AutoDecisionExecution = true,
-                MarketChangeSensitivityRatio = 0.015m
+                MarketChangeSensitivityRatio = 0.01m,
+                TradingSessionInHours = 24,
+                TradingValueBleedRatio = 0.1m
             };
 
             AutoExecution = TradingStrategy.AutoDecisionExecution;
@@ -108,7 +113,7 @@ namespace mleader.tradingbot.Engine.Cex
                 apiConfig?.Logger);
 
 
-//            Console.WriteLine("Init Cex Trading Engine");
+            Console.WriteLine("Init Cex Trading Engine");
             RequestTimer = new System.Timers.Timer(1000) {Enabled = true, AutoReset = true};
             RequestTimer.Elapsed += (sender, args) =>
             {
@@ -250,6 +255,8 @@ namespace mleader.tradingbot.Engine.Cex
                     }
                 }
 
+                LastCaculationTime = DateTime.Now;
+
                 try
                 {
                     MarkeDecisionsAsync().Wait();
@@ -285,6 +292,8 @@ namespace mleader.tradingbot.Engine.Cex
             }
             catch (Exception ex)
             {
+                Console.WriteLine(ex.Message);
+                Thread.Sleep(1000);
                 Console.Clear();
             }
             finally
@@ -376,6 +385,21 @@ namespace mleader.tradingbot.Engine.Cex
 
             #endregion
 
+            #region Get Account Open Orders
+
+            AccountOpenOrders = await GetOpenOrdersAsync();
+            if (AccountOpenOrders == null)
+            {
+                Console.WriteLine("\n [Unable to receive account open orders] - Carrying 3 seconds sleep...");
+
+                Thread.Sleep(3000);
+                ApiRequestcrruedAllowance = 0;
+                ApiRequestCounts = 0;
+                return false;
+            }
+
+            #endregion
+
             #region Get Account Balancees
 
             AccountBalance = await GetAccountBalanceAsync();
@@ -391,20 +415,6 @@ namespace mleader.tradingbot.Engine.Cex
 
             #endregion
 
-            #region Get Account Open Orders
-
-            AccountOpenOrders = await GetOpenOrdersAsync();
-            if (AccountOpenOrders == null)
-            {
-                Console.WriteLine("\n [Unable to receive account open orders] - Carrying 3 seconds sleep...");
-
-                Thread.Sleep(3000);
-                ApiRequestcrruedAllowance = 0;
-                ApiRequestCounts = 0;
-                return false;
-            }
-
-            #endregion
 
             return !error;
         }
@@ -569,14 +579,15 @@ namespace mleader.tradingbot.Engine.Cex
                                                                      item => item.Key == OperatingExchangeCurrency)
                                                                  .Select(item =>
                                                                  {
-                                                                     if (item.Value != null)
-                                                                     {
-                                                                         item.Value.InOrders = (AccountOpenOrders
-                                                                                 ?.Where(i => i.Type == OrderType.Sell)
-                                                                                 .Sum(i => i.Amount))
-                                                                             .GetValueOrDefault();
-                                                                     }
-
+//                                                                     if (item.Value != null)
+//                                                                     {
+//                                                                         item.Value.InOrders = Math.Min(
+//                                                                             (AccountOpenOrders
+//                                                                                 ?.Where(i => i.Type == OrderType.Sell)
+//                                                                                 .Sum(i => i.Amount))
+//                                                                             .GetValueOrDefault(), item.Value.InOrders);
+//                                                                     }
+//
                                                                      return item.Value;
                                                                  }).FirstOrDefault() ??
                                                              new CexAccountBalanceItem(OperatingExchangeCurrency)
@@ -589,20 +600,15 @@ namespace mleader.tradingbot.Engine.Cex
                                                                ?.Where(item => item.Key == OperatingTargetCurrency)
                                                                .Select(item =>
                                                                {
-                                                                   if (item.Value != null)
-                                                                   {
-                                                                       var newInOrder = (AccountOpenOrders
-                                                                               ?.Where(i =>
-                                                                                   i.Type == OrderType.Buy)
-                                                                               .Sum(i =>
-                                                                                   (i.Amount * i.Price +
-                                                                                    BuyingFeeInAmount) /
-                                                                                   (1 - BuyingFeeInPercentage)))
-                                                                           .GetValueOrDefault();
-                                                                       item.Value.InOrders = Math.Min(newInOrder,
-                                                                           item.Value.InOrders);
-                                                                   }
-
+//                                                                   if (item.Value == null) return item.Value;
+//                                                                   var newInOrder = (AccountOpenOrders
+//                                                                       ?.Where(i =>
+//                                                                           i.Type == OrderType.Buy)
+//                                                                       .Sum(i =>
+//                                                                           i.Amount * i.Price)).GetValueOrDefault();
+//                                                                   item.Value.InOrders = Math.Min(newInOrder,
+//                                                                       item.Value.InOrders);
+//
                                                                    return item.Value;
                                                                }).FirstOrDefault() ??
                                                            new CexAccountBalanceItem(OperatingTargetCurrency)
@@ -928,11 +934,15 @@ namespace mleader.tradingbot.Engine.Cex
             Console.WriteLine(
                 $"\tOriginal Value On Start: {Math.Round(TradingStartValueInExchangeCurrency, 8)} {OperatingExchangeCurrency} ({TradingStartValueInTargetCurrency:N2} {OperatingTargetCurrency})\n");
             Console.WriteLine(
-                $"\t Current:   \t\t{originalPortfolioValueWhenBuying:N2} {TargetCurrencyBalance?.Currency}\t\t  {originalPortfolioValueWhenSelling:N2} {TargetCurrencyBalance?.Currency}\t\t\t\t");
+                $"\t Current:   \t\t{originalPortfolioValueWhenBuying:N2} {OperatingTargetCurrency}\t\t  {originalPortfolioValueWhenSelling:N2} {OperatingTargetCurrency}\t\t\t\t");
+            Console.WriteLine(
+                $"\t            \t\t{GetCurrentPortfolioEstimatedExchangeValue(PublicLastPurchasePrice):N8} {OperatingExchangeCurrency}\t\t  {GetCurrentPortfolioEstimatedExchangeValue(PublicLastSellPrice):N8} {OperatingExchangeCurrency}\t\t\t\t");
             Console.WriteLine(
                 $"\t After  :\t\t{finalPortfolioValueWhenBuying:N2} {TargetCurrencyBalance?.Currency}\t\t  {finalPortfolioValueWhenSelling:N2} {TargetCurrencyBalance?.Currency}\t\t\t\t");
             Console.WriteLine(
-                $"\t Order Difference:\t{finalPortfolioValueWhenBuying - originalPortfolioValueWhenBuying:N2} {TargetCurrencyBalance?.Currency}\t\t  {finalPortfolioValueWhenSelling - originalPortfolioValueWhenSelling:N2} {TargetCurrencyBalance?.Currency} ");
+                $"\t            \t\t{GetCurrentPortfolioEstimatedExchangeValue(buyingPriceInPrinciple):N8} {OperatingExchangeCurrency}\t\t  {GetCurrentPortfolioEstimatedExchangeValue(sellingPriceInPrinciple):N8} {OperatingExchangeCurrency}\t\t\t\t");
+            Console.WriteLine(
+                $"\t Order Difference:\t{finalPortfolioValueWhenBuying - originalPortfolioValueWhenBuying:N2} {OperatingTargetCurrency}\t\t  {finalPortfolioValueWhenSelling - originalPortfolioValueWhenSelling:N2} {OperatingTargetCurrency} ");
 
             Console.Write(
                 $"\n\t Profit Current:\t");
@@ -940,13 +950,13 @@ namespace mleader.tradingbot.Engine.Cex
                 ? ConsoleColor.DarkGreen
                 : ConsoleColor.DarkRed;
             Console.Write(
-                $"{originalPortfolioValueWhenBuying - TradingStartValueInTargetCurrency:N2} {TargetCurrencyBalance?.Currency}\t\t  ");
+                $"{originalPortfolioValueWhenBuying - TradingStartValueInTargetCurrency:N2} {OperatingTargetCurrency}\t\t  ");
             Console.ForegroundColor = originalPortfolioValueWhenSelling - TradingStartValueInTargetCurrency > 0
                 ? ConsoleColor.DarkGreen
                 : ConsoleColor.DarkRed;
 
             Console.Write(
-                $"{originalPortfolioValueWhenSelling - TradingStartValueInTargetCurrency:N2} {TargetCurrencyBalance?.Currency}\n");
+                $"{originalPortfolioValueWhenSelling - TradingStartValueInTargetCurrency:N2} {OperatingTargetCurrency}\n");
             Console.ResetColor();
             Console.Write(
                 $"\t Profit After:\t\t");
@@ -954,17 +964,17 @@ namespace mleader.tradingbot.Engine.Cex
                 ? ConsoleColor.DarkGreen
                 : ConsoleColor.DarkRed;
             Console.Write(
-                $"{finalPortfolioValueWhenBuying - TradingStartValueInTargetCurrency:N2} {TargetCurrencyBalance?.Currency}\t\t  ");
+                $"{finalPortfolioValueWhenBuying - TradingStartValueInTargetCurrency:N2} {OperatingTargetCurrency}\t\t  ");
             Console.ForegroundColor = finalPortfolioValueWhenSelling - TradingStartValueInTargetCurrency > 0
                 ? ConsoleColor.DarkGreen
                 : ConsoleColor.DarkRed;
             Console.Write(
-                $"{finalPortfolioValueWhenSelling - TradingStartValueInTargetCurrency:N2} {TargetCurrencyBalance?.Currency} ");
+                $"{finalPortfolioValueWhenSelling - TradingStartValueInTargetCurrency:N2} {OperatingTargetCurrency} ");
             Console.ResetColor();
 
             Console.ForegroundColor = ConsoleColor.DarkBlue;
             Console.WriteLine(
-                $"\n\t Stop Line:\t{TradingStrategy.StopLine} {TargetCurrencyBalance.Currency}\t\t  ");
+                $"\n\t Stop Line:\t{TradingStrategy.StopLine} {OperatingTargetCurrency}\t\t  ");
 
             Console.ForegroundColor = ConsoleColor.Blue;
             Console.WriteLine("\n\t===============================****==================================\n");
@@ -982,14 +992,13 @@ namespace mleader.tradingbot.Engine.Cex
                 !finalPortfolioValueDecreasedWhenBuying &&
                 finalPortfolioValueWhenBuying >= TradingStrategy.StopLine && !IsBearMarketContinuable)
             {
-                if ((buyingPriceInPrinciple > sellingPriceInPrinciple ||
-                     buyingPriceInPrinciple >= AccountWeightedAverageSellPrice && AccountWeightedAverageSellPrice > 0)
+                if ((buyingPriceInPrinciple > sellingPriceInPrinciple)
                     && !(isBullMarket && isBullMarketContinuable))
                 {
                     Console.BackgroundColor = ConsoleColor.Black;
                     Console.ForegroundColor = ConsoleColor.White;
                     Console.WriteLine(
-                        $"WARNING - Buying price ({buyingPriceInPrinciple}) higher than selling price ({sellingPriceInPrinciple}) ({AccountWeightedAverageSellPrice}) - Skip current [BUY] order execution for lower risk.");
+                        $"WARNING - Buying price ({buyingPriceInPrinciple}) higher than selling price ({sellingPriceInPrinciple}) - Skip current [BUY] order execution for lower risk.");
 //                    SendWebhookMessage(
 //                        $":warning:  Buying Higher than selling - BUY: {buyingPriceInPrinciple} / SELL: {sellingPriceInPrinciple} / AVG SELL: {AccountWeightedAverageSellPrice}\n" +
 //                        $"Skipped Order Amount In {OperatingExchangeCurrency}: {buyingAmountInPrinciple} {OperatingExchangeCurrency}\n" +
@@ -1004,17 +1013,19 @@ namespace mleader.tradingbot.Engine.Cex
 
                     //If holding, better cancel previous buying orders that are lower than current price
                     var invalidatedOrders = AccountOpenOrders?.Where(item =>
-                        item.Type == OrderType.Buy && item.Price < buyingPriceInPrinciple);
+                        item.Type == OrderType.Buy && item.Price >= buyingPriceInPrinciple);
                     if (invalidatedOrders?.Count() > 0)
                         Console.BackgroundColor = ConsoleColor.DarkRed;
                     Console.ForegroundColor = ConsoleColor.White;
-                    Console.WriteLine("Cancelling open orders that won't be achieved");
+                    Console.WriteLine("Cancelling open BUY orders that may better off if hold");
                     foreach (var invalidatedOrder in invalidatedOrders)
                     {
                         Task.Run(async () =>
                         {
                             try
                             {
+                                Console.WriteLine(
+                                    $"Attempt to cancel BUY order {invalidatedOrder.OrderId} - {invalidatedOrder.Amount}@{invalidatedOrder.Price}");
                                 await CancelOrderAsync(invalidatedOrder);
                             }
                             catch (Exception ex)
@@ -1094,8 +1105,36 @@ namespace mleader.tradingbot.Engine.Cex
                     }
 
 
-                    if (immediateExecute & !skip )
+                    if (immediateExecute & !skip)
                     {
+                        var invalidatedOrders = AccountOpenOrders?.Where(item =>
+                            item.Type == OrderType.Sell &&
+                            item.Price <= buyingPriceInPrinciple);
+                        if (invalidatedOrders?.Count() > 0)
+                        {
+                            Console.BackgroundColor = ConsoleColor.DarkRed;
+                            Console.ForegroundColor = ConsoleColor.White;
+                            Console.WriteLine(
+                                "Cancelling SELL open orders that are conflicting with current buying order.");
+                            foreach (var invalidatedOrder in invalidatedOrders)
+                            {
+                                Task.Run(async () =>
+                                {
+                                    try
+                                    {
+                                        await CancelOrderAsync(invalidatedOrder);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Console.WriteLine(ex.Message);
+                                    }
+                                }).RunInBackgroundAndForget();
+                            }
+
+                            Console.ResetColor();
+                        }
+
+
                         //execute buy order
                         var nonce = GetNonce();
                         var order = await Rest.PostAsync<ShortOrder>(
@@ -1129,13 +1168,17 @@ namespace mleader.tradingbot.Engine.Cex
                             Thread.Sleep(1000);
                             ApiRequestcrruedAllowance++;
                             LastTimeBuyOrderExecution = DateTime.Now;
-                            var invalidatedOrders = AccountOpenOrders?.Where(item =>
-                                item.Type == OrderType.Buy && item.Price < buyingPriceInPrinciple);
+
+
+                            invalidatedOrders = AccountOpenOrders?.Where(item =>
+                                item.Type == OrderType.Buy &&
+                                item.Price < buyingPriceInPrinciple *
+                                (1 - TradingStrategy.MarketChangeSensitivityRatio));
                             if (invalidatedOrders?.Count() > 0)
                             {
                                 Console.BackgroundColor = ConsoleColor.DarkRed;
                                 Console.ForegroundColor = ConsoleColor.White;
-                                Console.WriteLine("Cancelling open orders that have lower buying prices");
+                                Console.WriteLine("Cancelling BUY open orders that are unlikely to achieve.");
                                 foreach (var invalidatedOrder in invalidatedOrders)
                                 {
                                     Task.Run(async () =>
@@ -1188,9 +1231,7 @@ namespace mleader.tradingbot.Engine.Cex
                 !finalPortfolioValueDecreasedWhenSelling &&
                 finalPortfolioValueWhenSelling >= TradingStrategy.StopLine && !IsBullMarketContinuable)
             {
-                if ((buyingPriceInPrinciple > sellingPriceInPrinciple ||
-                     sellingPriceInPrinciple <= AccountWeightedAveragePurchasePrice &&
-                     AccountWeightedAveragePurchasePrice > 0) &&
+                if ((buyingPriceInPrinciple > sellingPriceInPrinciple) &&
                     !(!isBullMarket && isBearMarketContinuable))
                 {
                     Console.BackgroundColor = ConsoleColor.Black;
@@ -1210,11 +1251,11 @@ namespace mleader.tradingbot.Engine.Cex
 
                     //If holding, better cancel previous selling orders that are lower than current price
                     var invalidatedOrders = AccountOpenOrders?.Where(item =>
-                        item.Type == OrderType.Sell && item.Price > sellingPriceInPrinciple);
+                        item.Type == OrderType.Sell && item.Price <= sellingPriceInPrinciple);
                     if (invalidatedOrders?.Count() > 0)
                         Console.BackgroundColor = ConsoleColor.DarkRed;
                     Console.ForegroundColor = ConsoleColor.White;
-                    Console.WriteLine("Cancelling open orders that won't be achieved");
+                    Console.WriteLine("Cancelling open SELL orders that may better off if hold");
                     foreach (var invalidatedOrder in invalidatedOrders)
                     {
                         Task.Run(async () =>
@@ -1300,6 +1341,34 @@ namespace mleader.tradingbot.Engine.Cex
 
                     if (immediateExecute & !skip)
                     {
+                        var invalidatedOrders = AccountOpenOrders?.Where(item =>
+                            item.Type == OrderType.Buy &&
+                            item.Price >= sellingPriceInPrinciple);
+                        if (invalidatedOrders?.Count() > 0)
+                        {
+                            Console.BackgroundColor = ConsoleColor.DarkRed;
+                            Console.ForegroundColor = ConsoleColor.White;
+                            Console.WriteLine(
+                                "Cancelling BUY open orders that are conflicting with current selling order.");
+                            foreach (var invalidatedOrder in invalidatedOrders)
+                            {
+                                Task.Run(async () =>
+                                {
+                                    try
+                                    {
+                                        await CancelOrderAsync(invalidatedOrder);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Console.WriteLine(ex.Message);
+                                    }
+                                }).RunInBackgroundAndForget();
+                            }
+
+                            Console.ResetColor();
+                        }
+
+
                         //execute buy order
                         var nonce = GetNonce();
                         var order = await Rest.PostAsync<ShortOrder>(
@@ -1336,13 +1405,15 @@ namespace mleader.tradingbot.Engine.Cex
                             Thread.Sleep(1000);
                             ApiRequestcrruedAllowance++;
                             LastTimeSellOrderExecution = DateTime.Now;
-                            var invalidatedOrders = AccountOpenOrders?.Where(item =>
-                                item.Type == OrderType.Sell && item.Price > sellingPriceInPrinciple);
+                            invalidatedOrders = AccountOpenOrders?.Where(item =>
+                                item.Type == OrderType.Sell &&
+                                item.Price >= sellingPriceInPrinciple *
+                                (1 + TradingStrategy.MarketChangeSensitivityRatio));
                             if (invalidatedOrders?.Count() > 0)
                             {
                                 Console.BackgroundColor = ConsoleColor.DarkRed;
                                 Console.ForegroundColor = ConsoleColor.White;
-                                Console.WriteLine("Cancelling open orders that have higher selling prices");
+                                Console.WriteLine("Cancelling open SELL orders that are unlikely to achieve");
                                 foreach (var invalidatedOrder in invalidatedOrders)
                                 {
                                     Task.Run(async () =>
@@ -1516,10 +1587,12 @@ namespace mleader.tradingbot.Engine.Cex
 
         private decimal GetMaximumBuyableAmountBasedOnReserveRatio(decimal buyingPriceInPrinciple)
         {
-            var maxAmount = GetCurrentPortfolioEstimatedTargetValue(buyingPriceInPrinciple) *
-                            (1 - TradingStrategy.MinimumReservePercentageAfterInitInTargetCurrency) /
-                            buyingPriceInPrinciple *
-                            (1 - BuyingFeeInPercentage) - BuyingFeeInAmount;
+            var maxAmount = buyingPriceInPrinciple > 0
+                ? (GetCurrentPortfolioEstimatedTargetValue(buyingPriceInPrinciple) *
+                   (1 - TradingStrategy.MinimumReservePercentageAfterInitInTargetCurrency) /
+                   buyingPriceInPrinciple *
+                   (1 - BuyingFeeInPercentage) - BuyingFeeInAmount)
+                : 0;
             if (maxAmount > TargetCurrencyBalance.Available)
                 maxAmount = TargetCurrencyBalance.Available;
             return Math.Truncate(maxAmount * 100000000) / 100000000;
@@ -1596,21 +1669,27 @@ namespace mleader.tradingbot.Engine.Cex
         {
             if (order?.OrderId?.IsNullOrEmpty() == true) return false;
 
-            var executable = order.Type == OrderType.Buy &&
-                             (!LastTimeBuyOrderCancellation.IsValidSqlDateTime() ||
-                              LastTimeBuyOrderCancellation.IsValidSqlDateTime() &&
-                              LastTimeBuyOrderCancellation.AddMinutes(TradingStrategy
-                                                                          .MinutesOfAccountHistoryOrderForPurchaseDecision +
-                                                                      (double) (1 + AverageTradingChangeRatio * 10)) <=
-                              DateTime.Now) ||
-                             order.Type == OrderType.Sell &&
-                             (!LastTimeSellOrderCancellation.IsValidSqlDateTime() ||
-                              LastTimeSellOrderCancellation.IsValidSqlDateTime() &&
-                              LastTimeSellOrderCancellation.AddMinutes(TradingStrategy
-                                                                           .MinutesOfAccountHistoryOrderForSellDecision +
-                                                                       (double) (1 + AverageTradingChangeRatio * 10)) <=
-                              DateTime.Now);
-            if (!executable) return false;
+//            var executable = order.Type == OrderType.Buy &&
+//                             (!LastTimeBuyOrderCancellation.IsValidSqlDateTime() ||
+//                              LastTimeBuyOrderCancellation.IsValidSqlDateTime() &&
+//                              LastTimeBuyOrderCancellation.AddMinutes(TradingStrategy
+//                                                                          .MinutesOfAccountHistoryOrderForPurchaseDecision +
+//                                                                      (double) (1 + AverageTradingChangeRatio * 10)) <=
+//                              DateTime.Now) ||
+//                             order.Type == OrderType.Sell &&
+//                             (!LastTimeSellOrderCancellation.IsValidSqlDateTime() ||
+//                              LastTimeSellOrderCancellation.IsValidSqlDateTime() &&
+//                              LastTimeSellOrderCancellation.AddMinutes(TradingStrategy
+//                                                                           .MinutesOfAccountHistoryOrderForSellDecision +
+//                                                                       (double) (1 + AverageTradingChangeRatio * 10)) <=
+//                              DateTime.Now);
+//            if (!executable)
+//            {
+//                Console.WriteLine(
+//                    $"Cancellation requirements not met yet. Skip cancellation execuation for {order.OrderId}.");
+//                return false;
+//            }
+
             var nonce = GetNonce();
             var result = await Rest.PostAsync<string>(
                 $"cancel_order/", new
@@ -1703,7 +1782,7 @@ namespace mleader.tradingbot.Engine.Cex
             }
             catch (Exception ex)
             {
-                Rest.LogDebug(ex.Message, ex);
+                Rest.LogDebug(ex.StackTrace, ex);
             }
         }
 
@@ -2027,23 +2106,17 @@ namespace mleader.tradingbot.Engine.Cex
                 }.Max();
 
                 orderbookPriorityAsks = CurrentOrderbook?.Asks?.Where(i => i[0] <= proposedSellingPrice);
-                var exchangeCurrencyBalance =
-                    AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
-                        ?.Select(item => item.Value)?.FirstOrDefault();
-                var targetCurrencyBalance =
-                    AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingTargetCurrency)
-                        ?.Select(item => item.Value)?.FirstOrDefault();
 
-                if (!(orderbookPriorityAsks?.Count() > 0) || exchangeCurrencyBalance == null ||
-                    targetCurrencyBalance == null) return proposedSellingPrice;
+                if (!(orderbookPriorityAsks?.Count() > 0) || ExchangeCurrencyBalance == null ||
+                    TargetCurrencyBalance == null) return proposedSellingPrice;
                 var currentPortfolioValue =
-                    exchangeCurrencyBalance.Total * PublicLastSellPrice + targetCurrencyBalance.Total;
+                    ExchangeCurrencyBalance.Total * PublicLastSellPrice + TargetCurrencyBalance.Total;
 
                 foreach (var order in orderbookPriorityAsks)
                 {
                     var portfolioValueBasedOnOrder =
-                        exchangeCurrencyBalance.Total * Math.Ceiling(order[0] * (1 - SellingFeeInPercentage) -
-                                                                     SellingFeeInAmount) + targetCurrencyBalance.Total;
+                        ExchangeCurrencyBalance.Total * Math.Ceiling(order[0] * (1 - SellingFeeInPercentage) -
+                                                                     SellingFeeInAmount) + TargetCurrencyBalance.Total;
                     //i.e. still make a profit
                     if (portfolioValueBasedOnOrder > currentPortfolioValue) return order[0];
                 }

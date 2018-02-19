@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using mleader.tradingbot.Data;
 using Microsoft.Extensions.Logging;
 
@@ -63,5 +64,8 @@ namespace mleader.tradingbot.Engine
         /// Alert percentage of market price change that should be used for calculating buy/sell prices
         /// </summary>
         decimal MarketChangeSensitivityRatio { get; set; }
+
+        decimal TradingSessionInHours { get; set; }
+        decimal TradingValueBleedRatio { get; set; }
     }
 }

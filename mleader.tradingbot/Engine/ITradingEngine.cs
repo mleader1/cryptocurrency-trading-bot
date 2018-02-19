@@ -15,7 +15,7 @@ namespace mleader.tradingbot.Engine
         decimal TradingStartBalanceInTargetCurrency { get; set; }
         decimal TradingStartValueInExchangeCurrency { get; set; }
         decimal TradingStartValueInTargetCurrency { get; set; }
-        
+
 
         string ReserveCurrency { get; set; }
         Dictionary<string, decimal> MinimumCurrencyOrderAmount { get; set; }
@@ -33,11 +33,21 @@ namespace mleader.tradingbot.Engine
         IOrder AccountLastSellOpenOrder { get; }
 
         DateTime TradingStartTime { get; set; }
+        /// <summary>
+        /// TODO: Used to implement re-value holding position as starting investment value (i.e. re-calculate the profitability based on each session start) 
+        /// </summary>
+        DateTime TradingSessionInHours { get; set; }
+        /// <summary>
+        /// TODO: Used to evaluate whether to execute orders when still above the stop line, but bleeding out (order executions that causes profit loss)
+        /// If the order execution is within the profit loss using the BleedRatio based on TradingStartValueInExchangeCurrency or TradingStartValueInTargetCurrency
+        /// </summary>
+        decimal TradingValueBleedRatio { get; set; }
+
         DateTime LastTimeBuyOrderCancellation { get; set; }
         DateTime LastTimeSellOrderCancellation { get; set; }
         DateTime LastTimeBuyOrderExecution { get; set; }
         DateTime LastTimeSellOrderExecution { get; set; }
-
+        DateTime LastCaculationTime { get; set; }
 
         Task<AccountBalance> GetAccountBalanceAsync();
         Task<List<IOrder>> GetOpenOrdersAsync();
