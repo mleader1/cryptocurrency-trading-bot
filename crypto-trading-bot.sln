@@ -2,6 +2,8 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "mleader.cex-bot", "mleader.tradingbot\mleader.tradingbot.csproj", "{EF0ABEA1-CDAA-4160-A8CE-71733FF19BEF}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "mleader.tradingbot.engines", "mleader.tradingbot.engines\mleader.tradingbot.engines.csproj", "{F3C2DB36-AD5B-43EF-BA23-7FD351F589C0}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -12,5 +14,9 @@ Global
 		{EF0ABEA1-CDAA-4160-A8CE-71733FF19BEF}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{EF0ABEA1-CDAA-4160-A8CE-71733FF19BEF}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{EF0ABEA1-CDAA-4160-A8CE-71733FF19BEF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F3C2DB36-AD5B-43EF-BA23-7FD351F589C0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F3C2DB36-AD5B-43EF-BA23-7FD351F589C0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F3C2DB36-AD5B-43EF-BA23-7FD351F589C0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F3C2DB36-AD5B-43EF-BA23-7FD351F589C0}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

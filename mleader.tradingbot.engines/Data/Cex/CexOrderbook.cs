@@ -2,36 +2,35 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
+using mleader.tradingbot.engines.Data;
 using Newtonsoft.Json;
 
 namespace mleader.tradingbot.Data.Cex
 {
-    public class Orderbook
+    public class CexOrderbook : Orderbook
     {
         [JsonProperty("timestamp")]
-        public double Timestamp { get; set; }
+        public override double Timestamp { get; set; }
 
         [JsonProperty("bids")]
-        public List<List<decimal>> Bids { get; set; }
+        public override List<List<decimal>> Bids { get; set; }
 
         [JsonProperty("asks")]
-        public List<List<decimal>> Asks { get; set; }
-
-        public decimal SellTotalInTargetCurrency => (Asks?.Sum(item => item[0] * item[1])).GetValueOrDefault();
+        public override List<List<decimal>> Asks { get; set; }
 
         [JsonProperty("pair")]
-        public string Pair { get; set; }
+        public override string Pair { get; set; }
 
         [JsonProperty("id")]
-        public string Id { get; set; }
+        public override string Id { get; set; }
 
         [JsonProperty("sell_total")]
-        public decimal SellTotal { get; set; }
+        public override decimal SellTotal { get; set; }
 
         [JsonProperty("buy_total")]
-        public decimal BuyTotal { get; set; }
+        public override decimal BuyTotal { get; set; }
 
-        public DateTime OrderTime
+        public override DateTime OrderTime
         {
             get
             {

@@ -8,7 +8,7 @@ namespace mleader.tradingbot.Engine
 {
     public interface ITradingEngine
     {
-        ExchangeApiConfig ApiConfig { get; set; }
+        IApi Api { get; set; }
         ITradingStrategy TradingStrategy { get; }
 
         decimal TradingStartBalanceInExchangeCurrency { get; set; }
@@ -33,10 +33,12 @@ namespace mleader.tradingbot.Engine
         IOrder AccountLastSellOpenOrder { get; }
 
         DateTime TradingStartTime { get; set; }
+
         /// <summary>
         /// TODO: Used to implement re-value holding position as starting investment value (i.e. re-calculate the profitability based on each session start) 
         /// </summary>
         DateTime TradingSessionInHours { get; set; }
+
         /// <summary>
         /// TODO: Used to evaluate whether to execute orders when still above the stop line, but bleeding out (order executions that causes profit loss)
         /// If the order execution is within the profit loss using the BleedRatio based on TradingStartValueInExchangeCurrency or TradingStartValueInTargetCurrency

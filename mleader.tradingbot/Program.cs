@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using mleader.tradingbot.Data;
 using mleader.tradingbot.Engine;
-using mleader.tradingbot.Engine.Cex;
 using Microsoft.Extensions.Logging;
 using System.Linq;
+using mleader.tradingbot.Engine.Api;
 using OElite;
 
 namespace mleader.tradingbot
@@ -18,7 +18,6 @@ namespace mleader.tradingbot
             loggerFactory.AddConsole();
             Console.WriteLine("======================");
             var tradingEngines = new List<ITradingEngine>();
-
 
             Console.Write("CEX API Secret:");
             var secret = Console.ReadLine();
@@ -160,14 +159,11 @@ namespace mleader.tradingbot
                 TradingValueBleedRatio = 0.1m
             };
 
-            tradingEngines.Add(new CexTradingEngine(new ExchangeApiConfig()
-            {
-                ApiSecret = secret,
-                ApiUsername = username,
-                ApiKey = apiKey,
-                SlackWebhook = slackWebhook,
-                Logger = loggerFactory.CreateLogger($"{typeof(CexTradingEngine).Name} - BTC - USD")
-            }, exchangeCurrency, targetCurrency, tradingStrategy));
+            tradingEngines.Add(new TradingEngine(
+                new CexApi(apiKey, secret, username, slackWebhook,
+                    loggerFactory.CreateLogger($"CEX.IO Trading Engine - {exchangeCurrency} - {targetCurrency}"),
+                    tradingStrategy),
+                exchangeCurrency, targetCurrency));
 
             var tasks = new List<Task>();
             foreach (var engine in tradingEngines)

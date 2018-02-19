@@ -9,4 +9,8 @@
     <PackageReference Include="OElite.Restme" Version="2.0.1-dev3" />
     <PackageReference Include="OElite.Restme.Utils" Version="2.0.1-dev1" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\mleader.tradingbot.engines\mleader.tradingbot.engines.csproj" />
+    <ProjectReference Include="..\mleader.tradingbot.engines\mleader.tradingbot.engines.csproj" />
+  </ItemGroup>
 </Project>

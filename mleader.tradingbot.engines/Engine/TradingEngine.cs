@@ -2,23 +2,18 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using System.Reflection;
-using System.Runtime.CompilerServices;
-using System.Security.Cryptography;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using mleader.tradingbot.Data;
 using mleader.tradingbot.Data.Cex;
-using Newtonsoft.Json.Linq;
+using mleader.tradingbot.engines.Data;
 using OElite;
-using StackExchange.Redis;
 
-namespace mleader.tradingbot.Engine.Cex
+namespace mleader.tradingbot.Engine
 {
-    public class CexTradingEngine : ITradingEngine
+    public class TradingEngine : ITradingEngine
     {
-        public ExchangeApiConfig ApiConfig { get; set; }
+        public IApi Api { get; set; }
         public string ReserveCurrency { get; set; }
         public Dictionary<string, decimal> MinimumCurrencyOrderAmount { get; set; }
 
@@ -42,7 +37,7 @@ namespace mleader.tradingbot.Engine.Cex
             .OrderByDescending(item => item.Price).FirstOrDefault();
 
 
-        public ITradingStrategy TradingStrategy { get; }
+        public ITradingStrategy TradingStrategy => Api?.TradingStrategy;
 
         private Orderbook CurrentOrderbook { get; set; }
         private string OperatingExchangeCurrency { get; }
@@ -80,40 +75,15 @@ namespace mleader.tradingbot.Engine.Cex
         public DateTime TradingStartTime { get; set; }
 
 
-        public CexTradingEngine(ExchangeApiConfig apiConfig, string exchangeCurrency, string targetCurrency,
-            ITradingStrategy strategy)
+        public TradingEngine(IApi api, string exchangeCurrency, string targetCurrency)
         {
-            ApiConfig = apiConfig;
             OperatingExchangeCurrency = exchangeCurrency;
             OperatingTargetCurrency = targetCurrency;
-            TradingStrategy = strategy ?? new TradingStrategy
-            {
-                MinutesOfAccountHistoryOrderForPurchaseDecision = 60,
-                MinutesOfAccountHistoryOrderForSellDecision = 60,
-                MinutesOfPublicHistoryOrderForPurchaseDecision = 30,
-                MinutesOfPublicHistoryOrderForSellDecision = 30,
-                MinimumReservePercentageAfterInitInTargetCurrency = 0.1m,
-                MinimumReservePercentageAfterInitInExchangeCurrency = 0.1m,
-                OrderCapPercentageAfterInit = 0.6m,
-                OrderCapPercentageOnInit = 0.25m,
-                AutoDecisionExecution = true,
-                MarketChangeSensitivityRatio = 0.01m,
-                TradingSessionInHours = 24,
-                TradingValueBleedRatio = 0.1m
-            };
+            Api = api;
 
             AutoExecution = TradingStrategy.AutoDecisionExecution;
 
-            Rest = new Rest("https://cex.io/api/",
-                new RestConfig
-                {
-                    OperationMode = RestMode.HTTPRestClient,
-                    UseRestConvertForCollectionSerialization = false
-                },
-                apiConfig?.Logger);
-
-
-            Console.WriteLine("Init Cex Trading Engine");
+            Console.WriteLine("Init Trading Engine");
             RequestTimer = new System.Timers.Timer(1000) {Enabled = true, AutoReset = true};
             RequestTimer.Elapsed += (sender, args) =>
             {
@@ -141,7 +111,7 @@ namespace mleader.tradingbot.Engine.Cex
 
         public async Task FirstBatchPreparationAsync()
         {
-            await RefreshCexCurrencyLimitsAsync();
+            await RefreshCurrencyLimitsAsync();
             if (!await InitBaseDataAsync())
             {
                 Console.WriteLine("Init Data Failed. Program Terminated.");
@@ -149,9 +119,9 @@ namespace mleader.tradingbot.Engine.Cex
             }
 
             var totalExchangeCurrencyBalance =
-                (AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
-                    .Select(c => c.Value?.Total)
-                    .FirstOrDefault()).GetValueOrDefault();
+            (AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
+                .Select(c => c.Value?.Total)
+                .FirstOrDefault()).GetValueOrDefault();
             var totalTargetCurrencyBalance = (AccountBalance?.CurrencyBalances
                 ?.Where(item => item.Key == OperatingTargetCurrency)
                 .Select(c => c.Value?.Total)
@@ -309,35 +279,30 @@ namespace mleader.tradingbot.Engine.Cex
         {
             #region Get Historical Trade Histories
 
-            var latestThousandTradeHistories =
-                await Rest.GetAsync<List<TradeHistory>>(
-                    $"trade_history/{OperatingExchangeCurrency}/{OperatingTargetCurrency}");
-            ApiRequestCounts++;
+            var tradeHistory = await Api.GetHistoricalTradeHistoryAsync(
+                OperatingExchangeCurrency,
+                OperatingTargetCurrency, DateTime.UtcNow.AddMinutes(-1 * (
+                                                                        TradingStrategy
+                                                                            .MinutesOfPublicHistoryOrderForPurchaseDecision >
+                                                                        TradingStrategy
+                                                                            .MinutesOfPublicHistoryOrderForSellDecision
+                                                                            ? TradingStrategy
+                                                                                .MinutesOfPublicHistoryOrderForPurchaseDecision
+                                                                            : TradingStrategy
+                                                                                .MinutesOfPublicHistoryOrderForSellDecision
+                                                                    )));
             var error = false;
-            if (latestThousandTradeHistories?.Count > 0)
+            if (tradeHistory?.Count > 0)
             {
-                var lastXMinutes =
-                    latestThousandTradeHistories.Where(item => item.Timestamp >= DateTime.UtcNow.AddMinutes(-1 * (
-                                                                                                                TradingStrategy
-                                                                                                                    .MinutesOfPublicHistoryOrderForPurchaseDecision >
-                                                                                                                TradingStrategy
-                                                                                                                    .MinutesOfPublicHistoryOrderForSellDecision
-                                                                                                                    ? TradingStrategy
-                                                                                                                        .MinutesOfPublicHistoryOrderForPurchaseDecision
-                                                                                                                    : TradingStrategy
-                                                                                                                        .MinutesOfPublicHistoryOrderForSellDecision
-                                                                                                            )));
-
-
-                LatestPublicPurchaseHistory = lastXMinutes
+                LatestPublicPurchaseHistory = tradeHistory
                     .Where(item => item.OrderType == OrderType.Buy && item.Timestamp >=
                                    DateTime.UtcNow.AddMinutes(
                                        -1 * TradingStrategy.MinutesOfPublicHistoryOrderForPurchaseDecision))
-                    .Select(item => item as ITradeHistory).ToList();
-                LatestPublicSaleHistory = lastXMinutes.Where(item =>
+                    .Select(item => item).ToList();
+                LatestPublicSaleHistory = tradeHistory.Where(item =>
                         item.OrderType == OrderType.Sell && item.Timestamp >=
                         DateTime.UtcNow.AddMinutes(-1 * TradingStrategy.MinutesOfPublicHistoryOrderForSellDecision))
-                    .Select(item => item as ITradeHistory).ToList();
+                    .Select(item => item).ToList();
             }
             else
             {
@@ -352,16 +317,6 @@ namespace mleader.tradingbot.Engine.Cex
 //                $"Cex Exchange order executions in last " +
 //                $"{(TradingStrategy.HoursOfPublicHistoryOrderForPurchaseDecision > TradingStrategy.HoursOfPublicHistoryOrderForSellDecision ? TradingStrategy.HoursOfPublicHistoryOrderForPurchaseDecision : TradingStrategy.HoursOfPublicHistoryOrderForSellDecision)} hours: " +
 //                $"\t BUY: {LatestPublicPurchaseHistory?.Count}\t SELL: {LatestPublicSaleHistory?.Count}");
-
-            #endregion
-
-            #region  Last Sell Price
-
-            var lastSellPrice =
-                await Rest.GetAsync<JObject>(
-                    $"last_price/{OperatingExchangeCurrency}/{OperatingTargetCurrency}");
-            ApiRequestCounts++;
-            _publicLastSellPriceLive = NumericUtils.GetDecimalValueFromObject(lastSellPrice?.Value<decimal>("lprice"));
 
             #endregion
 
@@ -422,52 +377,12 @@ namespace mleader.tradingbot.Engine.Cex
         private async Task<bool> RefreshAccountTradeHistory()
         {
             bool error;
-            var nonce = GetNonce();
-            var latestAccountTradeHistories = await Rest.PostAsync<List<FullOrder>>(
-                $"archived_orders/{OperatingExchangeCurrency}/{OperatingTargetCurrency}", new
-                {
-                    Key = ApiConfig.ApiKey,
-                    Signature = GetApiSignature(nonce),
-                    Nonce = nonce,
-                    DateFrom = (DateTime.UtcNow.AddMinutes(
-                                    -1 * (TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision >
-                                          TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision
-                                        ? TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision
-                                        : TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision)) -
-                                new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds,
-                    DateTo = (DateTime.UtcNow.AddMinutes(
-                                  (TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision >
-                                   TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision
-                                      ? TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision
-                                      : TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision)) -
-                              new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds,
-                });
-            ApiRequestCounts++;
+            var latestAccountTradeHistories = await Api.GetAccountTradeHistoryAsync(OperatingExchangeCurrency,
+                OperatingTargetCurrency);
 
             if (latestAccountTradeHistories == null)
             {
-                Console.WriteLine(await Rest.PostAsync<string>(
-                    $"archived_orders/{OperatingExchangeCurrency}/{OperatingTargetCurrency}", new
-                    {
-                        Key = ApiConfig.ApiKey,
-                        Signature = GetApiSignature(nonce),
-                        Nonce = nonce,
-                        DateFrom = (DateTime.UtcNow.AddMinutes(
-                                        -1 * (TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision >
-                                              TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision
-                                            ? TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision
-                                            : TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision)) -
-                                    new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds,
-                        DateTo = (DateTime.UtcNow.AddMinutes(
-                                      (TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision >
-                                       TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision
-                                          ? TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision
-                                          : TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision)) -
-                                  new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds,
-                    }));
-
                 Console.WriteLine("\n [Unable to receive account records] - Carrying 3 seconds sleep...");
-
                 Thread.Sleep(3000);
                 ApiRequestcrruedAllowance = 0;
                 ApiRequestCounts = 0;
@@ -503,51 +418,30 @@ namespace mleader.tradingbot.Engine.Cex
 
         private async Task RefreshPublicOrderbookAsync()
         {
-            CurrentOrderbook =
-                await Rest.GetAsync<Orderbook>($"order_book/{OperatingExchangeCurrency}/{OperatingTargetCurrency}/");
+            CurrentOrderbook = await Api.GetPublicOrderbookAsync(OperatingExchangeCurrency, OperatingTargetCurrency);
             ApiRequestCounts++;
 
             if (CurrentOrderbook == null)
             {
-                Console.WriteLine(
-                    await Rest.GetAsync<string>($"order_book/{OperatingExchangeCurrency}/{OperatingTargetCurrency}/"));
-
                 Console.WriteLine("\n [Unable to receive public orderbook] - Carrying 3 seconds sleep...");
-
                 Thread.Sleep(3000);
                 ApiRequestcrruedAllowance = 0;
                 ApiRequestCounts = 0;
             }
         }
 
-        private async Task RefreshCexCurrencyLimitsAsync()
+        private async Task RefreshCurrencyLimitsAsync()
         {
-            var result = await Rest.GetAsync<JObject>("currency_limits");
-            ApiRequestCounts++;
-            var limits = result?["data"]?["pairs"]?.Children().Select(item => item.ToObject<CurrencyLimit>());
-
-            CurrencyLimits = limits?.ToList() ?? new List<CurrencyLimit>();
+            CurrencyLimits = await Api.GetCurrencyLimitsAsync();
         }
 
         private async Task RefreshAccountFeesAsync()
         {
-            var nonce = GetNonce();
-            var myFees = await Rest.PostAsync<JObject>("get_myfee", new
-            {
-                key = ApiConfig.ApiKey,
-                signature = GetApiSignature(nonce),
-                nonce
-            });
-            ApiRequestCounts++;
-            SellingFeeInPercentage = (myFees?.GetValue("data")
-                                         ?.Value<JToken>($"{OperatingExchangeCurrency}:{OperatingTargetCurrency}")
-                                         ?.Value<decimal>("sell"))
-                                     .GetValueOrDefault() / 100;
-            SellingFeeInAmount = 0;
-            BuyingFeeInPercentage = (myFees?.GetValue("data")
-                                        ?.Value<JToken>($"{OperatingExchangeCurrency}:{OperatingTargetCurrency}")
-                                        ?.Value<decimal>("buy"))
-                                    .GetValueOrDefault() / 100;
+            var fees = await Api.GetAccountFeesAsync(OperatingExchangeCurrency, OperatingTargetCurrency);
+
+            SellingFeeInPercentage = fees.SellingFeeInPercentage;
+            SellingFeeInAmount = fees.SellingFeeInAmount;
+            BuyingFeeInPercentage = fees.BuyingFeeInPercentage;
             BuyingFeeInAmount = 0;
         }
 
@@ -564,14 +458,7 @@ namespace mleader.tradingbot.Engine.Cex
 
         public async Task<AccountBalance> GetAccountBalanceAsync()
         {
-            var nonce = GetNonce();
-            AccountBalance = (await Rest.PostAsync<CexAccountBalance>("balance/", new
-            {
-                key = ApiConfig.ApiKey,
-                signature = GetApiSignature(nonce),
-                nonce
-            }))?.ToAccountBalance();
-            ApiRequestCounts++;
+            AccountBalance = await Api.GetAccountBalanceAsync();
             return AccountBalance;
         }
 
@@ -1136,18 +1023,9 @@ namespace mleader.tradingbot.Engine.Cex
 
 
                         //execute buy order
-                        var nonce = GetNonce();
-                        var order = await Rest.PostAsync<ShortOrder>(
-                            $"place_order/{OperatingExchangeCurrency}/{OperatingTargetCurrency}", new
-                            {
-                                signature = GetApiSignature(nonce),
-                                key = ApiConfig.ApiKey,
-                                nonce,
-                                type = "buy",
-                                amount = buyingAmountInPrinciple,
-                                price = buyingPriceInPrinciple
-                            });
-                        ApiRequestCounts++;
+                        var order = await Api.ExecuteOrderAsync(OrderType.Buy, OperatingExchangeCurrency,
+                            OperatingTargetCurrency, buyingAmountInPrinciple, buyingPriceInPrinciple);
+
                         if (order?.OrderId?.IsNotNullOrEmpty() == true)
                         {
                             Console.BackgroundColor = ConsoleColor.DarkGreen;
@@ -1196,27 +1074,6 @@ namespace mleader.tradingbot.Engine.Cex
 
                                 Console.ResetColor();
                             }
-                        }
-                        else
-                        {
-                            nonce = GetNonce();
-                            Console.WriteLine(await Rest.PostAsync<string>(
-                                $"place_order/{OperatingExchangeCurrency}/{OperatingTargetCurrency}", new
-                                {
-                                    signature = GetApiSignature(nonce),
-                                    key = ApiConfig.ApiKey,
-                                    nonce,
-                                    type = "buy",
-                                    amount = buyingAmountInPrinciple,
-                                    price = buyingPriceInPrinciple
-                                }));
-                            Console.BackgroundColor = ConsoleColor.DarkRed;
-                            Console.ForegroundColor = ConsoleColor.White;
-                            Console.WriteLine(
-                                $" [FAILED] BUY Order FAILED: {buyingAmountInPrinciple} {OperatingExchangeCurrency} at {buyingPriceInPrinciple} per {OperatingExchangeCurrency}");
-                            Console.ResetColor();
-
-                            ApiRequestCounts++;
                         }
                     }
                 }
@@ -1370,18 +1227,8 @@ namespace mleader.tradingbot.Engine.Cex
 
 
                         //execute buy order
-                        var nonce = GetNonce();
-                        var order = await Rest.PostAsync<ShortOrder>(
-                            $"place_order/{OperatingExchangeCurrency}/{OperatingTargetCurrency}", new
-                            {
-                                signature = GetApiSignature(nonce),
-                                key = ApiConfig.ApiKey,
-                                nonce,
-                                type = "sell",
-                                amount = sellingAmountInPrinciple,
-                                price = sellingPriceInPrinciple
-                            });
-                        ApiRequestCounts++;
+                        var order = await Api.ExecuteOrderAsync(OrderType.Sell, OperatingExchangeCurrency,
+                            OperatingTargetCurrency, sellingAmountInPrinciple, sellingPriceInPrinciple);
                         if (order?.OrderId?.IsNotNullOrEmpty() == true)
                         {
                             Console.BackgroundColor = ConsoleColor.DarkGreen;
@@ -1431,27 +1278,6 @@ namespace mleader.tradingbot.Engine.Cex
 
                                 Console.ResetColor();
                             }
-                        }
-                        else
-                        {
-                            nonce = GetNonce();
-                            Console.WriteLine(await Rest.PostAsync<string>(
-                                $"place_order/{OperatingExchangeCurrency}/{OperatingTargetCurrency}", new
-                                {
-                                    signature = GetApiSignature(nonce),
-                                    key = ApiConfig.ApiKey,
-                                    nonce,
-                                    type = "sell",
-                                    amount = sellingAmountInPrinciple,
-                                    price = sellingPriceInPrinciple
-                                }));
-                            Console.BackgroundColor = ConsoleColor.DarkRed;
-                            Console.ForegroundColor = ConsoleColor.White;
-                            Console.WriteLine(
-                                $" [FAILED] SELL Order FAILED: {sellingAmountInPrinciple} {OperatingExchangeCurrency} at {sellingPriceInPrinciple} per {OperatingExchangeCurrency}");
-                            Console.ResetColor();
-
-                            ApiRequestCounts++;
                         }
                     }
                 }
@@ -1690,53 +1516,43 @@ namespace mleader.tradingbot.Engine.Cex
 //                return false;
 //            }
 
-            var nonce = GetNonce();
-            var result = await Rest.PostAsync<string>(
-                $"cancel_order/", new
-                {
-                    signature = GetApiSignature(nonce),
-                    key = ApiConfig.ApiKey,
-                    nonce,
-                    id = order.OrderId
-                });
-            ApiRequestCounts++;
+            var result = await Api.CancelOrderAsync(order);
 
-            if (BooleanUtils.GetBooleanValueFromObject(result))
-            {
-                if (order.Type == OrderType.Buy)
-                    LastTimeBuyOrderCancellation = DateTime.Now;
-                if (order.Type == OrderType.Sell)
-                    LastTimeSellOrderCancellation = DateTime.Now
-                        ;
-                ;
-                Console.BackgroundColor = ConsoleColor.DarkRed;
-                Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine(
-                    $" [CANCEL] [{(order.Type == OrderType.Buy ? "BUY" : "SELL")}] Order {order.OrderId} Cancelled: {(order.Type == OrderType.Buy ? order.Amount * order.Price : order.Amount)} {(order.Type == OrderType.Buy ? OperatingTargetCurrency : OperatingExchangeCurrency)} at {order.Price} per {OperatingExchangeCurrency}");
-                Console.ResetColor();
+            if (!result) return BooleanUtils.GetBooleanValueFromObject(result);
 
-                var currentValue = ExchangeCurrencyBalance?.Total * PublicLastSellPrice + TargetCurrencyBalance?.Total;
+            if (order.Type == OrderType.Buy)
+                LastTimeBuyOrderCancellation = DateTime.Now;
+            if (order.Type == OrderType.Sell)
+                LastTimeSellOrderCancellation = DateTime.Now
+                    ;
+            ;
+            Console.BackgroundColor = ConsoleColor.DarkRed;
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.WriteLine(
+                $" [CANCEL] [{(order.Type == OrderType.Buy ? "BUY" : "SELL")}] Order {order.OrderId} Cancelled: {(order.Type == OrderType.Buy ? order.Amount * order.Price : order.Amount)} {(order.Type == OrderType.Buy ? OperatingTargetCurrency : OperatingExchangeCurrency)} at {order.Price} per {OperatingExchangeCurrency}");
+            Console.ResetColor();
 
-                var targetValue = order.Type == OrderType.Buy
-                    ? (ExchangeCurrencyBalance?.Total + order.Amount) * order.Price + TargetCurrencyBalance?.Total -
-                      (order.Amount * order.Price)
-                    : (ExchangeCurrencyBalance?.Total - order.Amount) * order.Price + TargetCurrencyBalance?.Total +
-                      (order.Amount * order.Price);
+            var currentValue = ExchangeCurrencyBalance?.Total * PublicLastSellPrice + TargetCurrencyBalance?.Total;
+
+            var targetValue = order.Type == OrderType.Buy
+                ? (ExchangeCurrencyBalance?.Total + order.Amount) * order.Price + TargetCurrencyBalance?.Total -
+                  (order.Amount * order.Price)
+                : (ExchangeCurrencyBalance?.Total - order.Amount) * order.Price + TargetCurrencyBalance?.Total +
+                  (order.Amount * order.Price);
 
 
-                SendWebhookMessage(
-                    $" :cry: *[CANCELCATION]* [{(order.Type == OrderType.Buy ? "BUY" : "SELL")}] Order {order.OrderId} - {order.Timestamp}\n" +
-                    $" *Executed:* {(order.Type == OrderType.Buy ? order.Amount * order.Price : order.Amount)} {(order.Type == OrderType.Buy ? OperatingTargetCurrency : OperatingExchangeCurrency)} \n" +
-                    $" *Price:* {order.Price} {OperatingTargetCurrency}_\n" +
-                    $" *Current Price:* {(order.Type == OrderType.Buy ? PublicLastPurchasePrice : PublicLastSellPrice)} {OperatingTargetCurrency}_\n" +
-                    $" *Current Value in {OperatingTargetCurrency}:* {currentValue} {OperatingTargetCurrency} \n" +
-                    $" *Target Value in {OperatingTargetCurrency}:* {targetValue} {OperatingTargetCurrency} \n" +
-                    $" *Current Value in {OperatingExchangeCurrency}:* {(PublicLastSellPrice > 0 ? currentValue / PublicLastSellPrice : 0)} {OperatingExchangeCurrency} \n" +
-                    $" *Target Value in {OperatingExchangeCurrency}:* {targetValue / order.Price} {OperatingExchangeCurrency}"
-                );
-                Thread.Sleep(1000);
-                ApiRequestcrruedAllowance++;
-            }
+            SendWebhookMessage(
+                $" :cry: *[CANCELCATION]* [{(order.Type == OrderType.Buy ? "BUY" : "SELL")}] Order {order.OrderId} - {order.Timestamp}\n" +
+                $" *Executed:* {(order.Type == OrderType.Buy ? order.Amount * order.Price : order.Amount)} {(order.Type == OrderType.Buy ? OperatingTargetCurrency : OperatingExchangeCurrency)} \n" +
+                $" *Price:* {order.Price} {OperatingTargetCurrency}_\n" +
+                $" *Current Price:* {(order.Type == OrderType.Buy ? PublicLastPurchasePrice : PublicLastSellPrice)} {OperatingTargetCurrency}_\n" +
+                $" *Current Value in {OperatingTargetCurrency}:* {currentValue} {OperatingTargetCurrency} \n" +
+                $" *Target Value in {OperatingTargetCurrency}:* {targetValue} {OperatingTargetCurrency} \n" +
+                $" *Current Value in {OperatingExchangeCurrency}:* {(PublicLastSellPrice > 0 ? currentValue / PublicLastSellPrice : 0)} {OperatingExchangeCurrency} \n" +
+                $" *Target Value in {OperatingExchangeCurrency}:* {targetValue / order.Price} {OperatingExchangeCurrency}"
+            );
+            Thread.Sleep(1000);
+            ApiRequestcrruedAllowance++;
 
             return BooleanUtils.GetBooleanValueFromObject(result);
         }
@@ -1744,93 +1560,15 @@ namespace mleader.tradingbot.Engine.Cex
 
         public async Task<List<IOrder>> GetOpenOrdersAsync()
         {
-            var nonce = GetNonce();
-            var orders = await Rest.PostAsync<List<ShortOrder>>(
-                $"open_orders/{OperatingExchangeCurrency}/{OperatingTargetCurrency}", new
-                {
-                    signature = GetApiSignature(nonce),
-                    key = ApiConfig.ApiKey,
-                    nonce
-                });
-            ApiRequestCounts++;
-            orders?.ForEach(item =>
-            {
-                item.TargetCurrency = OperatingTargetCurrency;
-                item.ExchangeCurrency = OperatingExchangeCurrency;
-            });
-            AccountOpenOrders =
-                orders?.Where(item =>
-                    item.ExchangeCurrency == OperatingExchangeCurrency &&
-                    item.TargetCurrency == OperatingTargetCurrency).Select(item => item as IOrder).ToList() ??
-                new List<IOrder>();
+            AccountOpenOrders = await Api.GetAccountOpenOrdersAsync(OperatingExchangeCurrency, OperatingTargetCurrency);
             return AccountOpenOrders;
         }
 
-        public void SendWebhookMessage(string message)
+        private void SendWebhookMessage(string message)
         {
-            try
-            {
-                if (ApiConfig.SlackWebhook.IsNotNullOrEmpty() && message.IsNotNullOrEmpty())
-                {
-                    new Rest(ApiConfig.SlackWebhook).PostAsync<string>("", new
-                    {
-                        text = message,
-                        username =
-                            $"MLEADER's CEX.IO Trading Bot - {OperatingExchangeCurrency}/{OperatingTargetCurrency} "
-                    }).Wait();
-                }
-            }
-            catch (Exception ex)
-            {
-                Rest.LogDebug(ex.StackTrace, ex);
-            }
+            Api.SendWebhookMessage(message,
+                $"MLEADER's CEX.IO Trading Bot - {OperatingExchangeCurrency}/{OperatingTargetCurrency} ");
         }
-
-        private bool HasAvailableAmountToPurchase(decimal buyingAmount, AccountBalanceItem balanceItem)
-        {
-            return false;
-        }
-
-        #region Private Members
-
-        private Rest Rest { get; }
-
-        private long GetNonce()
-        {
-            return Convert.ToInt64(Math.Truncate((DateTime.UtcNow - DateTime.MinValue).TotalMilliseconds));
-        }
-
-        private string GetApiSignature(long nonce)
-        {
-            // Validation first
-            if (string.IsNullOrEmpty(ApiConfig?.ApiKey))
-            {
-                throw new ArgumentException("Parameter apiUsername is not set.");
-            }
-
-            if (string.IsNullOrEmpty(ApiConfig.ApiKey))
-            {
-                throw new ArgumentException("Parameter apiKey is not set");
-            }
-
-            if (string.IsNullOrEmpty(ApiConfig.ApiSecret))
-            {
-                throw new ArgumentException("Parameter apiSecret is not set");
-            }
-
-            // HMAC input is nonce + username + key
-            var hashInput = string.Format(CultureInfo.InvariantCulture, "{0}{1}{2}", nonce, ApiConfig.ApiUsername,
-                ApiConfig.ApiKey);
-            var hashInputBytes = Encoding.UTF8.GetBytes(hashInput);
-
-            var secretBytes = Encoding.UTF8.GetBytes(ApiConfig.ApiSecret);
-            var hmac = new HMACSHA256(secretBytes);
-            var signatureBytes = hmac.ComputeHash(hashInputBytes);
-            var signature = BitConverter.ToString(signatureBytes).ToUpper().Replace("-", string.Empty);
-            return signature;
-        }
-
-        #endregion
 
 
         #region Calculation of Key Factors
@@ -1940,13 +1678,8 @@ namespace mleader.tradingbot.Engine.Cex
         /// Find the last public sale price
         /// </summary>
         /// <returns></returns>
-        public decimal PublicLastSellPrice =>
-            _publicLastSellPriceLive > 0
-                ? _publicLastSellPriceLive
-                : (LatestPublicSaleHistory?.OrderByDescending(item => item.Timestamp)
-                    ?.Select(item => item.Price)?.FirstOrDefault()).GetValueOrDefault();
-
-        private decimal _publicLastSellPriceLive;
+        public decimal PublicLastSellPrice => (LatestPublicSaleHistory?.OrderByDescending(item => item.Timestamp)
+            ?.Select(item => item.Price)?.FirstOrDefault()).GetValueOrDefault();
 
         private decimal AccountLastSellPrice => (LatestAccountSaleHistory?.OrderByDescending(item => item.Timestamp)
             ?.Select(item => item.Price)?.FirstOrDefault()).GetValueOrDefault();
