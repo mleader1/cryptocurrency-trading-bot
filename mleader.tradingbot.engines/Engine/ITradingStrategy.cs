@@ -65,7 +65,7 @@ namespace mleader.tradingbot.Engine
         /// </summary>
         decimal MarketChangeSensitivityRatio { get; set; }
 
-        decimal TradingSessionInHours { get; set; }
+        decimal PriceCorrectionFrequencyInHours { get; set; }
         decimal TradingValueBleedRatio { get; set; }
     }
 }

@@ -10,23 +10,30 @@ namespace mleader.tradingbot.Data.Cex
         /// Trade Id
         /// </summary>
         [JsonProperty("tid")]
+        [DataMember(Name = "tid")]
         public string Id { get; set; }
 
         [JsonProperty("type")]
+        [DataMember(Name = "type")]
         public OrderType OrderType { get; set; }
 
         [JsonProperty("amount")]
+        [DataMember(Name = "amount")]
         public decimal Amount { get; set; }
 
         [JsonProperty("price")]
+        [DataMember(Name = "price")]
         public decimal Price { get; set; }
 
         /// <summary>
         /// Date Timestamp
         /// </summary>
         [JsonProperty("date")]
+        [DataMember(Name = "date")]
         public double Date { get; set; }
 
+        [JsonIgnore]
+        [IgnoreDataMember]
         public DateTime Timestamp
         {
             get

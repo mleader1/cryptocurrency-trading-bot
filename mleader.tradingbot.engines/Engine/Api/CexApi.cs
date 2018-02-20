@@ -41,7 +41,7 @@ namespace mleader.tradingbot.Engine.Api
                 OrderCapPercentageOnInit = 0.25m,
                 AutoDecisionExecution = true,
                 MarketChangeSensitivityRatio = 0.01m,
-                TradingSessionInHours = 24,
+                PriceCorrectionFrequencyInHours = 24,
                 TradingValueBleedRatio = 0.1m
             };
             Rest = new Rest("https://cex.io/api/",
@@ -167,19 +167,19 @@ namespace mleader.tradingbot.Engine.Api
         {
             var latestThousandTradeHistories =
                 await Rest.GetAsync<List<CexTradeHistory>>(
-                    $"trade_history/{operatingExchangeCurrency}/{operatingTargetCurrency}");
+                    $"trade_history/{operatingExchangeCurrency}/{operatingTargetCurrency}/");
             ApiRequestCounts++;
             return
-                latestThousandTradeHistories.Where(item => item.Timestamp >= DateTime.UtcNow.AddMinutes(-1 * (
-                                                                                                            TradingStrategy
-                                                                                                                .MinutesOfPublicHistoryOrderForPurchaseDecision >
-                                                                                                            TradingStrategy
-                                                                                                                .MinutesOfPublicHistoryOrderForSellDecision
-                                                                                                                ? TradingStrategy
-                                                                                                                    .MinutesOfPublicHistoryOrderForPurchaseDecision
-                                                                                                                : TradingStrategy
-                                                                                                                    .MinutesOfPublicHistoryOrderForSellDecision
-                                                                                                        ))).Select(
+                latestThousandTradeHistories?.Where(item => item.Timestamp >= DateTime.UtcNow.AddMinutes(-1 * (
+                                                                                                             TradingStrategy
+                                                                                                                 .MinutesOfPublicHistoryOrderForPurchaseDecision >
+                                                                                                             TradingStrategy
+                                                                                                                 .MinutesOfPublicHistoryOrderForSellDecision
+                                                                                                                 ? TradingStrategy
+                                                                                                                     .MinutesOfPublicHistoryOrderForPurchaseDecision
+                                                                                                                 : TradingStrategy
+                                                                                                                     .MinutesOfPublicHistoryOrderForSellDecision
+                                                                                                         ))).Select(
                     item => item as ITradeHistory).ToList() ?? new List<ITradeHistory>();
         }
 
@@ -223,16 +223,16 @@ namespace mleader.tradingbot.Engine.Api
             var latestAccountTradeHistories = await Rest.PostAsync<List<FullOrder>>(
                 $"archived_orders/{operatingExchangeCurrency}/{operatingTargetCurrency}", new
                 {
-                    Key = _apiKey,
-                    Signature = GetApiSignature(nonce),
-                    Nonce = nonce,
-                    DateFrom = (DateTime.UtcNow.AddMinutes(
+                    key = _apiKey,
+                    signature = GetApiSignature(nonce),
+                    nonce,
+                    dateFrom = (DateTime.UtcNow.AddMinutes(
                                     -1 * (TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision >
                                           TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision
                                         ? TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision
                                         : TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision)) -
                                 new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds,
-                    DateTo = (DateTime.UtcNow.AddMinutes(
+                    dateTo = (DateTime.UtcNow.AddMinutes(
                                   (TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision >
                                    TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision
                                       ? TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision

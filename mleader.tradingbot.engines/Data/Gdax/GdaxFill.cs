@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Data.Common;
 using System.Linq;
 using System.Runtime.Serialization;
 using mleader.tradingbot.Data;
@@ -7,22 +6,21 @@ using Newtonsoft.Json;
 
 namespace mleader.tradingbot.engines.Data.Gdax
 {
-    public class GdaxOrder : IOrder
+    public class GdaxFill : IOrder
     {
-        [DataMember(Name = "Id")]
-        [JsonProperty("id")]
+        [DataMember(Name = "order_id")]
+        [JsonProperty("order_id")]
         public string OrderId { get; set; }
 
         [DataMember(Name = "created_at")]
         [JsonProperty("created_at")]
         public DateTime Timestamp { get; }
 
+
         [DataMember(Name = "side")]
         [JsonProperty("side")]
         public string OrderSide { get; set; }
 
-        [JsonIgnore]
-        [IgnoreDataMember]
         public OrderType Type
         {
             get => OrderSide == "buy" ? OrderType.Buy : OrderType.Sell;
@@ -37,8 +35,6 @@ namespace mleader.tradingbot.engines.Data.Gdax
         [JsonProperty("size")]
         public decimal Amount { get; set; }
 
-        [JsonIgnore]
-        [IgnoreDataMember]
         public decimal Pending
         {
             get => Settled ? 0 : Amount;

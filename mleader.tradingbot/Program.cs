@@ -168,8 +168,8 @@ namespace mleader.tradingbot
                 AutoDecisionExecution = autoExecution,
                 StopLine = stopLine,
                 MarketChangeSensitivityRatio = sensitivityRatio,
-                TradingSessionInHours = 24,
-                TradingValueBleedRatio = 0.1m
+                PriceCorrectionFrequencyInHours = 6,
+                TradingValueBleedRatio = 0.1m                
             };
 
             IApi api;

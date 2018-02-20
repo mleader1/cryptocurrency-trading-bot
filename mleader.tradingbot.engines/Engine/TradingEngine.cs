@@ -900,7 +900,9 @@ namespace mleader.tradingbot.Engine
 
                     //If holding, better cancel previous buying orders that are lower than current price
                     var invalidatedOrders = AccountOpenOrders?.Where(item =>
-                        item.Type == OrderType.Buy && item.Price >= buyingPriceInPrinciple);
+                        item.Type == OrderType.Buy && item.Price >= buyingPriceInPrinciple &&
+                        item.Timestamp.AddHours((double) TradingStrategy.PriceCorrectionFrequencyInHours) <=
+                        DateTime.Now);
                     if (invalidatedOrders?.Count() > 0)
                         Console.BackgroundColor = ConsoleColor.DarkRed;
                     Console.ForegroundColor = ConsoleColor.White;
@@ -996,7 +998,9 @@ namespace mleader.tradingbot.Engine
                     {
                         var invalidatedOrders = AccountOpenOrders?.Where(item =>
                             item.Type == OrderType.Sell &&
-                            item.Price <= buyingPriceInPrinciple);
+                            item.Price <= buyingPriceInPrinciple &&
+                            item.Timestamp.AddHours((double) TradingStrategy.PriceCorrectionFrequencyInHours) <=
+                            DateTime.Now);
                         if (invalidatedOrders?.Count() > 0)
                         {
                             Console.BackgroundColor = ConsoleColor.DarkRed;
@@ -1296,7 +1300,10 @@ namespace mleader.tradingbot.Engine
                     LastTimeBuyOrderExecution.AddMinutes(
                         (double) (Math.Max(TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision,
                                       TradingStrategy.MinutesOfPublicHistoryOrderForPurchaseDecision) *
-                                  (1m + AverageTradingChangeRatio * 10m))) < DateTime.Now)
+                                  (1m + AverageTradingChangeRatio * 10m))) < DateTime.Now &&
+                    AccountLastBuyOpenOrder.Timestamp.AddHours((double) TradingStrategy
+                        .PriceCorrectionFrequencyInHours) <=
+                    DateTime.Now)
                 {
                     // only do it when changes are significant (i.e. can't easily purchase)
                     if (
@@ -1350,7 +1357,10 @@ namespace mleader.tradingbot.Engine
                     LastTimeSellOrderExecution.AddMinutes(
                         (double) (Math.Max(TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision,
                                       TradingStrategy.MinutesOfPublicHistoryOrderForSellDecision) *
-                                  (1m + AverageTradingChangeRatio * 10m))) < DateTime.Now)
+                                  (1m + AverageTradingChangeRatio * 10m))) < DateTime.Now &&
+                    AccountLastSellOpenOrder.Timestamp.AddHours(
+                        (double) TradingStrategy.PriceCorrectionFrequencyInHours) <=
+                    DateTime.Now)
                 {
                     // only do it when changes are significant (i.e. can't easily sell)
                     if (

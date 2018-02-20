@@ -50,7 +50,7 @@ namespace mleader.tradingbot.Engine.Api
                 OrderCapPercentageOnInit = 0.25m,
                 AutoDecisionExecution = true,
                 MarketChangeSensitivityRatio = 0.01m,
-                TradingSessionInHours = 24,
+                PriceCorrectionFrequencyInHours = 24,
                 TradingValueBleedRatio = 0.1m
             };
             Rest = new Rest("https://api.gdax.com",
@@ -64,7 +64,7 @@ namespace mleader.tradingbot.Engine.Api
 
         public async Task<List<CurrencyLimit>> GetCurrencyLimitsAsync()
         {
-            var path = "/currencies";
+            var path = "currencies";
             PrepareRequest(HttpMethod.Get, path);
             var currencyLimits = (await Rest.GetAsync<string>(path)).JsonDeserialize<List<GdaxCurrencyLimit>>();
             return (currencyLimits?.Count > 0)
@@ -74,7 +74,7 @@ namespace mleader.tradingbot.Engine.Api
 
         public async Task<TradingFees> GetAccountFeesAsync(string exchangeCurrency, string targetCurrency)
         {
-            var path = "/users/self/trailing-volume";
+            var path = "users/self/trailing-volume";
             //get account trailing volume
             PrepareRequest(HttpMethod.Get, path);
             var volumes = (await Rest.GetAsync<string>(path)).JsonDeserialize<List<GdaxTrailingVolume>>();
@@ -89,7 +89,7 @@ namespace mleader.tradingbot.Engine.Api
 
         public async Task<AccountBalance> GetAccountBalanceAsync()
         {
-            var path = "/accounts";
+            var path = "accounts";
             PrepareRequest(HttpMethod.Get, path);
             var balance = (await Rest.GetAsync<string>(path)).JsonDeserialize<GdaxAccountBalance>();
             return balance?.ToAccountBalance();
@@ -99,7 +99,7 @@ namespace mleader.tradingbot.Engine.Api
             decimal amount,
             decimal price)
         {
-            var path = "/orders";
+            var path = "orders";
             var content = new
             {
                 type = "limit",
@@ -149,13 +149,9 @@ namespace mleader.tradingbot.Engine.Api
         public async Task<List<IOrder>> GetAccountOpenOrdersAsync(string exchangeCurrency,
             string targetCurrency)
         {
-            var path = $"/orders";
-            var requestParams = new
-            {
-                product_id = $"{exchangeCurrency}-{targetCurrency}"
-            };
-            Rest.Add(requestParams);
-            PrepareRequest(HttpMethod.Get, path, requestParams.JsonSerialize());
+            var path = $"/orders?product_id={exchangeCurrency}-{targetCurrency}";
+
+            PrepareRequest(HttpMethod.Get, path);
             var result = (await Rest.GetAsync<string>(path))
                 .JsonDeserialize<List<GdaxOrder>>();
             return result?.Select(item => item as IOrder).ToList();
@@ -164,18 +160,13 @@ namespace mleader.tradingbot.Engine.Api
         public async Task<List<IOrder>> GetAccountTradeHistoryAsync(string exchangeCurrency,
             string targetCurrency)
         {
-            var path = $"/orders";
-            var requestParams = new
-            {
-                product_id = $"{exchangeCurrency}-{targetCurrency}",
-                status = "settled"
-            };
+            var path = $"/fills?product_id={exchangeCurrency}-{targetCurrency}";
 
-            PrepareRequest(HttpMethod.Get, path, requestParams.JsonSerialize());
-            Rest.Add(requestParams);
+            PrepareRequest(HttpMethod.Get, path);
+
             var result =
                 (await Rest.GetAsync<string>(path))
-                .JsonDeserialize<List<GdaxOrder>>();
+                .JsonDeserialize<List<GdaxFill>>();
             return result?.Select(item => item as IOrder).ToList();
         }
 
@@ -198,7 +189,7 @@ namespace mleader.tradingbot.Engine.Api
             }
         }
 
-        private void PrepareRequest(HttpMethod httpMethod, string requestPath, string requestBody = "")
+        private void PrepareRequest(HttpMethod httpMethod, string requestPath, string requestBody = null)
         {
             var timeStamp = DateTime.UtcNow.ToTimeStamp();
             var signedSignature = ComputeSignature(httpMethod, _apiSecret, timeStamp, requestPath, requestBody);
@@ -206,7 +197,7 @@ namespace mleader.tradingbot.Engine.Api
         }
 
         private string ComputeSignature(HttpMethod httpMethod, string secret, double timestamp, string requestUri,
-            string contentBody = "")
+            string contentBody = null)
         {
             var convertedString = Convert.FromBase64String(secret);
             var prehash = timestamp.ToString("F0", CultureInfo.InvariantCulture) + httpMethod.ToString().ToUpper() +
@@ -222,6 +213,7 @@ namespace mleader.tradingbot.Engine.Api
                 return Convert.ToBase64String(hmaccsha.ComputeHash(bytes));
             }
         }
+
 
         private void AddHeaders(
             string signedSignature,

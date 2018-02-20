@@ -21,7 +21,7 @@ namespace mleader.tradingbot.Engine
         public bool AutoDecisionExecution { get; set; }
         public decimal StopLine { get; set; }
         public decimal MarketChangeSensitivityRatio { get; set; }
-        public decimal TradingSessionInHours { get; set; }
+        public decimal PriceCorrectionFrequencyInHours { get; set; }
         public decimal TradingValueBleedRatio { get; set; }
 
     }
