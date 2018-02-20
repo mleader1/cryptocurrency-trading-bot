@@ -6,13 +6,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging" Version="2.0.0" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="2.0.0" />
-    <PackageReference Include="OElite.Restme" Version="2.0.1-dev7" />
-    <PackageReference Include="OElite.Restme.Utils" Version="2.0.1-dev4" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\oelite\cosmos\core\public\RESTme\src\OElite.Restme.Utils\OElite.Restme.Utils.csproj" />
-    <ProjectReference Include="..\..\oelite\cosmos\core\public\RESTme\src\OElite.Restme\OElite.Restme.csproj" />
-    <ProjectReference Include="..\mleader.tradingbot.engines\mleader.tradingbot.engines.csproj" />
     <ProjectReference Include="..\mleader.tradingbot.engines\mleader.tradingbot.engines.csproj" />
   </ItemGroup>
 </Project>

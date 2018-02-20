@@ -64,7 +64,7 @@ namespace mleader.tradingbot.Engine.Api
 
         public async Task<List<CurrencyLimit>> GetCurrencyLimitsAsync()
         {
-            var path = "currencies";
+            var path = "/currencies";
             PrepareRequest(HttpMethod.Get, path);
             var currencyLimits = (await Rest.GetAsync<string>(path)).JsonDeserialize<List<GdaxCurrencyLimit>>();
             return (currencyLimits?.Count > 0)
@@ -74,7 +74,7 @@ namespace mleader.tradingbot.Engine.Api
 
         public async Task<TradingFees> GetAccountFeesAsync(string exchangeCurrency, string targetCurrency)
         {
-            var path = "users/self/trailing-volume";
+            var path = "/users/self/trailing-volume";
             //get account trailing volume
             PrepareRequest(HttpMethod.Get, path);
             var volumes = (await Rest.GetAsync<string>(path)).JsonDeserialize<List<GdaxTrailingVolume>>();
@@ -89,7 +89,7 @@ namespace mleader.tradingbot.Engine.Api
 
         public async Task<AccountBalance> GetAccountBalanceAsync()
         {
-            var path = "accounts";
+            var path = "/accounts";
             PrepareRequest(HttpMethod.Get, path);
             var balance = (await Rest.GetAsync<string>(path)).JsonDeserialize<GdaxAccountBalance>();
             return balance?.ToAccountBalance();
@@ -99,7 +99,7 @@ namespace mleader.tradingbot.Engine.Api
             decimal amount,
             decimal price)
         {
-            var path = "orders";
+            var path = "/orders";
             var content = new
             {
                 type = "limit",
@@ -110,7 +110,8 @@ namespace mleader.tradingbot.Engine.Api
                 time_in_force = "GTC"
             };
             PrepareRequest(HttpMethod.Post, path, content.JsonSerialize());
-            return (await Rest.PostAsync<string>(path, content)).JsonDeserialize<GdaxOrder>();
+            Rest.Add(content);
+            return (await Rest.PostAsync<string>(path)).JsonDeserialize<GdaxOrder>();
         }
 
         public async Task<bool> CancelOrderAsync(IOrder order)
@@ -192,7 +193,8 @@ namespace mleader.tradingbot.Engine.Api
         private void PrepareRequest(HttpMethod httpMethod, string requestPath, string requestBody = null)
         {
             var timeStamp = DateTime.UtcNow.ToTimeStamp();
-            var signedSignature = ComputeSignature(httpMethod, _apiSecret, timeStamp, requestPath, requestBody);
+            var signedSignature = ComputeSignature(httpMethod, _apiSecret, timeStamp, requestPath,
+                requestBody ?? string.Empty);
             AddHeaders(signedSignature, timeStamp);
         }
 

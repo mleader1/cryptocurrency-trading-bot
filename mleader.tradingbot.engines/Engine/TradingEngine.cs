@@ -119,9 +119,9 @@ namespace mleader.tradingbot.Engine
             }
 
             var totalExchangeCurrencyBalance =
-            (AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
-                .Select(c => c.Value?.Total)
-                .FirstOrDefault()).GetValueOrDefault();
+                (AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
+                    .Select(c => c.Value?.Total)
+                    .FirstOrDefault()).GetValueOrDefault();
             var totalTargetCurrencyBalance = (AccountBalance?.CurrencyBalances
                 ?.Where(item => item.Key == OperatingTargetCurrency)
                 .Select(c => c.Value?.Total)
@@ -513,6 +513,12 @@ namespace mleader.tradingbot.Engine
             var buyingPriceInPrinciple = await GetPurchasePriceInPrincipleAsync();
 
 
+            var isBullMarket = IsBullMarket;
+            var isBullMarketContinuable = IsBullMarketContinuable;
+            var isBearMarketContinuable = IsBearMarketContinuable;
+            var betterHoldBuying = false;
+            var betterHoldSelling = false;
+
             bool buyingAmountAvailable = true,
                 sellingAmountAvailable = true,
                 finalPortfolioValueDecreasedWhenBuying,
@@ -560,6 +566,23 @@ namespace mleader.tradingbot.Engine
                                            GetCurrentPortfolioEstimatedExchangeValue(sellingPriceInPrinciple) *
                                            (1 - SellingFeeInPercentage) - SellingFeeInAmount;
             }
+
+            if (isBullMarket && isBullMarketContinuable)
+            {
+                buyingAmountInPrinciple =
+                    buyingAmountInPrinciple * (1 - TradingStrategy.MarketChangeSensitivityRatio);
+                sellingAmountInPrinciple =
+                    sellingAmountInPrinciple * (1 + TradingStrategy.MarketChangeSensitivityRatio);
+            }
+
+            if (!isBullMarket && isBearMarketContinuable)
+            {
+                buyingAmountInPrinciple =
+                    buyingAmountInPrinciple * (1 + TradingStrategy.MarketChangeSensitivityRatio);
+                sellingAmountInPrinciple =
+                    sellingAmountInPrinciple * (1 - TradingStrategy.MarketChangeSensitivityRatio);
+            }
+
 
             var exchangeCurrencyLimit = ExchangeCurrencyLimit?.MinimumExchangeAmount > 0
                 ? ExchangeCurrencyLimit.MinimumExchangeAmount
@@ -670,12 +693,6 @@ namespace mleader.tradingbot.Engine
 
             #region Draw the Graph
 
-            var isBullMarket = IsBullMarket;
-            var isBullMarketContinuable = IsBullMarketContinuable;
-            var isBearMarketContinuable = IsBearMarketContinuable;
-            var betterHoldBuying = false;
-            var betterHoldSelling = false;
-
             Console.WriteLine("");
             Console.ResetColor();
             Console.ForegroundColor = ConsoleColor.Blue;
@@ -685,8 +702,8 @@ namespace mleader.tradingbot.Engine
             Console.WriteLine("\t                       +++++++++++++++++++                          ");
             Console.ForegroundColor = ConsoleColor.DarkMagenta;
             Console.WriteLine(
-                $"\n\t {ExchangeCurrencyBalance?.Currency}: {ExchangeCurrencyBalance?.Available}{(ExchangeCurrencyBalance?.InOrders > 0 ? " \t\t\t" + ExchangeCurrencyBalance?.InOrders + " In Orders" : "")}" +
-                $"\n\t {TargetCurrencyBalance?.Currency}: {Math.Round((TargetCurrencyBalance?.Available).GetValueOrDefault(), 2)}{(TargetCurrencyBalance?.InOrders > 0 ? " \t\t\t" + Math.Round((TargetCurrencyBalance?.InOrders).GetValueOrDefault(), 2) + " In Orders" : "")}\t\t\t\t");
+                $"\n\t {OperatingExchangeCurrency}: {ExchangeCurrencyBalance?.Available}{(ExchangeCurrencyBalance?.InOrders > 0 ? " \t\t\t" + ExchangeCurrencyBalance?.InOrders + " In Orders" : "")}" +
+                $"\n\t {OperatingTargetCurrency}: {Math.Round((TargetCurrencyBalance?.Available).GetValueOrDefault(), 2)}{(TargetCurrencyBalance?.InOrders > 0 ? " \t\t\t" + Math.Round((TargetCurrencyBalance?.InOrders).GetValueOrDefault(), 2) + " In Orders" : "")}\t\t\t\t");
             Console.WriteLine($"\n\t Start Time: {TradingStartTime} \t\n\t Current Time: {DateTime.Now}\n\n");
             Console.ForegroundColor = ConsoleColor.Blue;
 
@@ -1974,30 +1991,45 @@ namespace mleader.tradingbot.Engine
                 ? PublicLastPurchasePrice
                 : AccountLastPurchasePrice;
 
-        private decimal ReasonableAccountLastSellPrice =>
-            Math.Abs(AccountLastSellPrice - PublicLastSellPrice) / Math.Min(PublicLastSellPrice,
-                AccountLastSellPrice > 0 ? AccountLastSellPrice : PublicLastSellPrice) >
-            TradingStrategy.MarketChangeSensitivityRatio
-                ? PublicLastSellPrice
-                : AccountLastSellPrice;
+        private decimal ReasonableAccountLastSellPrice => Math.Min(PublicLastSellPrice,
+                                                              AccountLastSellPrice > 0
+                                                                  ? AccountLastSellPrice
+                                                                  : PublicLastSellPrice) > 0
+            ? (
+                Math.Abs(AccountLastSellPrice - PublicLastSellPrice) / Math.Min(PublicLastSellPrice,
+                    AccountLastSellPrice > 0 ? AccountLastSellPrice : PublicLastSellPrice) >
+                TradingStrategy.MarketChangeSensitivityRatio
+                    ? PublicLastSellPrice
+                    : AccountLastSellPrice)
+            : PublicLastSellPrice;
 
         private decimal ReasonableAccountWeightedAverageSellPrice =>
-            Math.Abs(AccountWeightedAverageSellPrice - PublicLastSellPrice) /
             Math.Min(AccountWeightedAverageSellPrice > 0 ? AccountWeightedAverageSellPrice : PublicLastSellPrice,
-                PublicLastSellPrice) >
-            TradingStrategy.MarketChangeSensitivityRatio
-                ? PublicLastSellPrice
-                : AccountWeightedAverageSellPrice;
+                PublicLastSellPrice) > 0
+                ? (
+                    Math.Abs(AccountWeightedAverageSellPrice - PublicLastSellPrice) /
+                    Math.Min(
+                        AccountWeightedAverageSellPrice > 0 ? AccountWeightedAverageSellPrice : PublicLastSellPrice,
+                        PublicLastSellPrice) >
+                    TradingStrategy.MarketChangeSensitivityRatio
+                        ? PublicLastSellPrice
+                        : AccountWeightedAverageSellPrice)
+                : PublicLastSellPrice;
 
-        private decimal ReasonableAccountWeightedAveragePurchasePrice =>
-            Math.Abs(AccountWeightedAveragePurchasePrice - PublicLastPurchasePrice) /
-            Math.Min(PublicLastPurchasePrice,
-                AccountWeightedAveragePurchasePrice > 0
-                    ? AccountWeightedAveragePurchasePrice
-                    : PublicLastPurchasePrice) >
-            TradingStrategy.MarketChangeSensitivityRatio
-                ? PublicLastPurchasePrice
-                : AccountWeightedAveragePurchasePrice;
+        private decimal ReasonableAccountWeightedAveragePurchasePrice => Math.Min(PublicLastPurchasePrice,
+                                                                             AccountWeightedAveragePurchasePrice > 0
+                                                                                 ? AccountWeightedAveragePurchasePrice
+                                                                                 : PublicLastPurchasePrice) > 0
+            ? (
+                Math.Abs(AccountWeightedAveragePurchasePrice - PublicLastPurchasePrice) /
+                Math.Min(PublicLastPurchasePrice,
+                    AccountWeightedAveragePurchasePrice > 0
+                        ? AccountWeightedAveragePurchasePrice
+                        : PublicLastPurchasePrice) >
+                TradingStrategy.MarketChangeSensitivityRatio
+                    ? PublicLastPurchasePrice
+                    : AccountWeightedAveragePurchasePrice)
+            : PublicLastPurchasePrice;
 
         #endregion
 

@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using mleader.tradingbot.Data;
 using Newtonsoft.Json;
@@ -28,6 +29,10 @@ namespace mleader.tradingbot.engines.Data.Gdax
     public class GdaxAccountBalanceItem : AccountBalanceItem
     {
         public GdaxAccountBalanceItem(string currency) : base(currency)
+        {
+        }
+
+        public GdaxAccountBalanceItem() : base(string.Empty)
         {
         }
 

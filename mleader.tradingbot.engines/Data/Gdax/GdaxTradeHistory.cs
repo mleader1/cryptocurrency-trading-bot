@@ -1,6 +1,7 @@
 ﻿using System;
 using mleader.tradingbot.Data;
 using Newtonsoft.Json;
+using OElite;
 
 namespace mleader.tradingbot.engines.Data.Gdax
 {
@@ -17,6 +18,8 @@ namespace mleader.tradingbot.engines.Data.Gdax
 
         [JsonProperty("size")] public decimal Amount { get; set; }
         [JsonProperty("price")] public decimal Price { get; set; }
-        [JsonProperty("time")] public DateTime Timestamp { get; }
+        public DateTime Timestamp => Time.JsonDeserialize<DateTime>();
+
+        [JsonProperty("time")] public string Time { get; set; }
     }
 }
