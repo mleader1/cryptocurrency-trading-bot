@@ -83,7 +83,7 @@ namespace mleader.tradingbot.Engine
 
             AutoExecution = TradingStrategy.AutoDecisionExecution;
 
-            Console.WriteLine("Init Trading Engine");
+            Api.Rest.LogInfo("Init Trading Engine");
             RequestTimer = new System.Timers.Timer(1000) {Enabled = true, AutoReset = true};
             RequestTimer.Elapsed += (sender, args) =>
             {

@@ -4,7 +4,7 @@ using Newtonsoft.Json;
 
 namespace mleader.tradingbot.Data.Cex
 {
-    public class TradeHistory : ITradeHistory
+    public class CexTradeHistory : ITradeHistory
     {
         /// <summary>
         /// Trade Id

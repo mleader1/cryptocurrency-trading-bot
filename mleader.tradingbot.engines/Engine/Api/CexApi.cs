@@ -166,7 +166,7 @@ namespace mleader.tradingbot.Engine.Api
             string operatingTargetCurrency, DateTime? from = null)
         {
             var latestThousandTradeHistories =
-                await Rest.GetAsync<List<TradeHistory>>(
+                await Rest.GetAsync<List<CexTradeHistory>>(
                     $"trade_history/{operatingExchangeCurrency}/{operatingTargetCurrency}");
             ApiRequestCounts++;
             return
@@ -252,7 +252,7 @@ namespace mleader.tradingbot.Engine.Api
                     new Rest(SlackWebhook).PostAsync<string>("", new
                     {
                         text = message,
-                        username = username.IsNullOrEmpty() ? $"MLEADER's Trading Bot" : username
+                        username = username.IsNullOrEmpty() ? $"MLEADER's Trading Bot [CEX.IO]" : username
                     }).Wait();
                 }
             }

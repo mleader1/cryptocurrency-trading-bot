@@ -1,8 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Net.Cache;
 using System.Net.Http;
+using System.Runtime.ConstrainedExecution;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
@@ -10,6 +13,7 @@ using mleader.tradingbot.Data;
 using mleader.tradingbot.engines.Data;
 using mleader.tradingbot.engines.Data.Gdax;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json.Linq;
 using OElite;
 
 namespace mleader.tradingbot.Engine.Api
@@ -60,61 +64,138 @@ namespace mleader.tradingbot.Engine.Api
 
         public async Task<List<CurrencyLimit>> GetCurrencyLimitsAsync()
         {
-            PrepareRequest(HttpMethod.Get, "/currencies");
-            var currencyLimits = await Rest.GetAsync<List<GdaxCurrencyLimit>>("/currencies");
+            var path = "/currencies";
+            PrepareRequest(HttpMethod.Get, path);
+            var currencyLimits = (await Rest.GetAsync<string>(path)).JsonDeserialize<List<GdaxCurrencyLimit>>();
             return (currencyLimits?.Count > 0)
                 ? currencyLimits.Select(item => item as CurrencyLimit).ToList()
                 : new List<CurrencyLimit>();
         }
 
-        public Task<TradingFees> GetAccountFeesAsync(string exchangeCurrency, string targetCurrency)
+        public async Task<TradingFees> GetAccountFeesAsync(string exchangeCurrency, string targetCurrency)
         {
-            throw new NotImplementedException();
+            var path = "/users/self/trailing-volume";
+            //get account trailing volume
+            PrepareRequest(HttpMethod.Get, path);
+            var volumes = (await Rest.GetAsync<string>(path)).JsonDeserialize<List<GdaxTrailingVolume>>();
+            var exchangeVolume = volumes?.FirstOrDefault(item => item.ExchangeCurrency == exchangeCurrency);
+            var fee = exchangeVolume?.GetTradingFee() ?? GdaxTradingFeeStructure.FeeLevels.FirstOrDefault();
+            return new TradingFees
+            {
+                BuyingFeeInPercentage = fee.TakerFeeInPercent,
+                SellingFeeInPercentage = fee.MakerFeeInPercent
+            };
         }
 
-        public Task<AccountBalance> GetAccountBalanceAsync()
+        public async Task<AccountBalance> GetAccountBalanceAsync()
         {
-            throw new NotImplementedException();
+            var path = "/accounts";
+            PrepareRequest(HttpMethod.Get, path);
+            var balance = (await Rest.GetAsync<string>(path)).JsonDeserialize<GdaxAccountBalance>();
+            return balance?.ToAccountBalance();
         }
 
-        public Task<IOrder> ExecuteOrderAsync(OrderType orderType, string exchangeCurrency, string targetCurrency,
+        public async Task<IOrder> ExecuteOrderAsync(OrderType orderType, string exchangeCurrency, string targetCurrency,
             decimal amount,
             decimal price)
         {
-            throw new NotImplementedException();
+            var path = "/orders";
+            var content = new
+            {
+                type = "limit",
+                side = orderType == OrderType.Buy ? "buy" : "sell",
+                product_id = $"{exchangeCurrency}-{targetCurrency}",
+                price,
+                size = amount,
+                time_in_force = "GTC"
+            };
+            PrepareRequest(HttpMethod.Post, path, content.JsonSerialize());
+            return (await Rest.PostAsync<string>(path, content)).JsonDeserialize<GdaxOrder>();
         }
 
-        public Task<bool> CancelOrderAsync(IOrder order)
+        public async Task<bool> CancelOrderAsync(IOrder order)
         {
-            throw new NotImplementedException();
+            if (order?.OrderId.IsNotNullOrEmpty() != true) return false;
+
+            var path = $"/orders/{order?.OrderId}";
+            PrepareRequest(HttpMethod.Delete, path);
+            var result = await Rest.DeleteAsync<string>(path);
+            return result.IsNullOrEmpty();
         }
 
-        public Task<List<ITradeHistory>> GetHistoricalTradeHistoryAsync(string exchangeCurrency, string targetCurrency,
-            DateTime? @from = null)
+        public async Task<List<ITradeHistory>> GetHistoricalTradeHistoryAsync(string exchangeCurrency,
+            string targetCurrency,
+            DateTime? from = null)
         {
-            throw new NotImplementedException();
+            var path = $"/products/{exchangeCurrency}-{targetCurrency}/trades";
+            PrepareRequest(HttpMethod.Get, path);
+            var result = (await Rest.GetAsync<string>(path)).JsonDeserialize<List<GdaxTradeHistory>>();
+            return result?.Select(item => item as ITradeHistory).ToList();
         }
 
-        public Task<Orderbook> GetPublicOrderbookAsync(string exchangeCurrency, string targetCurrency)
+        public async Task<Orderbook> GetPublicOrderbookAsync(string exchangeCurrency, string targetCurrency)
         {
-            throw new NotImplementedException();
+            var path = $"/products/{exchangeCurrency}-{targetCurrency}/book";
+            PrepareRequest(HttpMethod.Get, path);
+            var result = (await Rest.GetAsync<string>(path)).JsonDeserialize<GdaxOrderbook>();
+            if (result == null)
+            {
+                Console.WriteLine(await Rest.GetAsync<string>(path));
+            }
+
+            return result;
         }
 
-        public Task<List<IOrder>> GetAccountOpenOrdersAsync(string operatingExchangeCurrency,
-            string operatingTargetCurrency)
+        public async Task<List<IOrder>> GetAccountOpenOrdersAsync(string exchangeCurrency,
+            string targetCurrency)
         {
-            throw new NotImplementedException();
+            var path = $"/orders";
+            var requestParams = new
+            {
+                product_id = $"{exchangeCurrency}-{targetCurrency}"
+            };
+            Rest.Add(requestParams);
+            PrepareRequest(HttpMethod.Get, path, requestParams.JsonSerialize());
+            var result = (await Rest.GetAsync<string>(path))
+                .JsonDeserialize<List<GdaxOrder>>();
+            return result?.Select(item => item as IOrder).ToList();
         }
 
-        public Task<List<IOrder>> GetAccountTradeHistoryAsync(string operatingExchangeCurrency,
-            string operatingTargetCurrency)
+        public async Task<List<IOrder>> GetAccountTradeHistoryAsync(string exchangeCurrency,
+            string targetCurrency)
         {
-            throw new NotImplementedException();
+            var path = $"/orders";
+            var requestParams = new
+            {
+                product_id = $"{exchangeCurrency}-{targetCurrency}",
+                status = "settled"
+            };
+
+            PrepareRequest(HttpMethod.Get, path, requestParams.JsonSerialize());
+            Rest.Add(requestParams);
+            var result =
+                (await Rest.GetAsync<string>(path))
+                .JsonDeserialize<List<GdaxOrder>>();
+            return result?.Select(item => item as IOrder).ToList();
         }
 
         public void SendWebhookMessage(string message, string username)
         {
-            throw new NotImplementedException();
+            try
+            {
+                if (SlackWebhook.IsNotNullOrEmpty() && message.IsNotNullOrEmpty())
+                {
+                    new Rest(SlackWebhook).PostAsync<string>("", new
+                    {
+                        text = message,
+                        username = username.IsNullOrEmpty() ? $"MLEADER's Trading Bot [GDAX]" : username
+                    }).Wait();
+                }
+            }
+            catch (Exception ex)
+            {
+                Rest.LogDebug(ex.StackTrace, ex);
+            }
         }
 
         private void PrepareRequest(HttpMethod httpMethod, string requestPath, string requestBody = "")

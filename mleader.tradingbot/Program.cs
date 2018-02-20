@@ -1,11 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using mleader.tradingbot.Data;
+using mleader.tradingbot.engines;
 using mleader.tradingbot.Engine;
-using Microsoft.Extensions.Logging;
-using System.Linq;
 using mleader.tradingbot.Engine.Api;
+using Microsoft.Extensions.Logging;
 using OElite;
 
 namespace mleader.tradingbot
@@ -19,11 +20,23 @@ namespace mleader.tradingbot
             Console.WriteLine("======================");
             var tradingEngines = new List<ITradingEngine>();
 
-            Console.Write("CEX API Secret:");
+            var useExchange = SupportedExchanges.Unknown;
+            while (useExchange == SupportedExchanges.Unknown)
+            {
+                Console.WriteLine("Type 1 for CEX.IO, Type 2 for GDAX");
+                useExchange =
+                    NumericUtils.GetIntegerValueFromObject(Console.ReadLine()).ParseEnum<SupportedExchanges>();
+            }
+
+
+            Console.Write($"{useExchange.ToString()} API Secret:");
             var secret = Console.ReadLine();
-            Console.Write("\nCEX Username:");
+            Console.Write(
+                $"\n{(useExchange == SupportedExchanges.Cex ? "CEX Username" : (useExchange == SupportedExchanges.Gdax ? "Gdax Pass Phrase" : "Username"))}:");
             var username = Console.ReadLine();
-            Console.Write("\nCex API Key:");
+
+
+            Console.Write($"\n{useExchange.ToString()} API Key:");
             var apiKey = Console.ReadLine();
             Console.Write("\nSlack Notification Webhook Url:");
             var slackWebhook = Console.ReadLine();
@@ -32,7 +45,7 @@ namespace mleader.tradingbot
             var exchangeCurrency = string.Empty;
             while (exchangeCurrency.IsNullOrEmpty())
             {
-                Console.Write("\nCex Exhcange Base currency name: (default BTC)");
+                Console.Write($"\n{useExchange.ToString()} Exhcange Base currency name: (default BTC)");
                 exchangeCurrency = Console.ReadLine();
                 if (Currencies.SupportedCurrencies.Count(i => i == exchangeCurrency) > 0) continue;
 
@@ -54,7 +67,7 @@ namespace mleader.tradingbot
             var targetCurrency = string.Empty;
             while (targetCurrency.IsNullOrEmpty())
             {
-                Console.Write("\nCex Exhcange Target currency name: (default USD)");
+                Console.Write($"\n{useExchange.ToString()} Exhcange Target currency name: (default USD)");
                 targetCurrency = Console.ReadLine();
                 if (Currencies.SupportedCurrencies.Count(i => i == targetCurrency) > 0) continue;
 
@@ -159,11 +172,24 @@ namespace mleader.tradingbot
                 TradingValueBleedRatio = 0.1m
             };
 
-            tradingEngines.Add(new TradingEngine(
-                new CexApi(apiKey, secret, username, slackWebhook,
-                    loggerFactory.CreateLogger($"CEX.IO Trading Engine - {exchangeCurrency} - {targetCurrency}"),
-                    tradingStrategy),
-                exchangeCurrency, targetCurrency));
+            IApi api;
+            switch (useExchange)
+            {
+                case SupportedExchanges.Gdax:
+                    api = new GdaxApi(apiKey, secret, username, slackWebhook,
+                        loggerFactory.CreateLogger($"GDAX Trading Engine - {exchangeCurrency} - {targetCurrency}"),
+                        tradingStrategy);
+                    break;
+                case SupportedExchanges.Cex:
+                    api = new CexApi(apiKey, secret, username, slackWebhook,
+                        loggerFactory.CreateLogger($"CEX.IO Trading Engine - {exchangeCurrency} - {targetCurrency}"),
+                        tradingStrategy);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException();
+            }
+
+            tradingEngines.Add(new TradingEngine(api, exchangeCurrency, targetCurrency));
 
             var tasks = new List<Task>();
             foreach (var engine in tradingEngines)
