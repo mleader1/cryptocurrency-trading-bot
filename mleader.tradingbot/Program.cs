@@ -139,11 +139,11 @@ namespace mleader.tradingbot
             if (orderCapPercentageOnInit <= 0)
                 orderCapPercentageOnInit = 0.25m;
 
-            Console.WriteLine("Order Cap Percentage On Init: (default 0.6)");
+            Console.WriteLine("Order Cap Percentage On Init: (default 0.3)");
             var orderCapPercentageAfterInit =
                 NumericUtils.GetDecimalValueFromObject(Console.ReadLine());
             if (orderCapPercentageAfterInit <= 0)
-                orderCapPercentageAfterInit = 0.6m;
+                orderCapPercentageAfterInit = 0.3m;
 
 
             bool autoExecution;
@@ -168,7 +168,7 @@ namespace mleader.tradingbot
                 AutoDecisionExecution = autoExecution,
                 StopLine = stopLine,
                 MarketChangeSensitivityRatio = sensitivityRatio,
-                PriceCorrectionFrequencyInHours = 6,
+                PriceCorrectionFrequencyInHours = 12,
                 TradingValueBleedRatio = 0.1m
             };
 

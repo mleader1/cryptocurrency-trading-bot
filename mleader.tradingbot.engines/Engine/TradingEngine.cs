@@ -518,6 +518,8 @@ namespace mleader.tradingbot.Engine
             var isBearMarketContinuable = IsBearMarketContinuable;
             var betterHoldBuying = false;
             var betterHoldSelling = false;
+            var buyingHigherThanSelling = false;
+            var sellingLowerThanBuying = false;
 
             bool buyingAmountAvailable = true,
                 sellingAmountAvailable = true,
@@ -761,7 +763,11 @@ namespace mleader.tradingbot.Engine
             {
                 if (!finalPortfolioValueDecreasedWhenBuying)
                 {
-                    if (isBullMarket && isBullMarketContinuable || !isBullMarket && isBearMarketContinuable)
+                    if (isBullMarket && isBullMarketContinuable || !isBullMarket && isBearMarketContinuable
+                                                                || AccountNextBuyOpenOrder?.Price > 0 &&
+                                                                PublicLastPurchasePrice >
+                                                                AccountNextBuyOpenOrder.Price *
+                                                                (1 + TradingStrategy.MarketChangeSensitivityRatio))
                     {
                         Console.BackgroundColor = ConsoleColor.DarkGray;
                         Console.Write("Better Hold");
@@ -800,7 +806,9 @@ namespace mleader.tradingbot.Engine
             {
                 if (!finalPortfolioValueDecreasedWhenSelling)
                 {
-                    if (isBullMarket && isBullMarketContinuable || !isBullMarket && isBearMarketContinuable)
+                    if (isBullMarket && isBullMarketContinuable || !isBullMarket && isBearMarketContinuable ||
+                        AccountNextSellOpenOrder?.Price > 0 && PublicLastSellPrice < AccountNextSellOpenOrder.Price *
+                        (1 - TradingStrategy.MarketChangeSensitivityRatio))
                     {
                         Console.BackgroundColor = ConsoleColor.DarkGray;
                         Console.Write("Better Hold");
@@ -909,6 +917,7 @@ namespace mleader.tradingbot.Engine
 //                        $"Skipped Order Amount In {OperatingTargetCurrency}: {buyingAmountInPrinciple * buyingPriceInPrinciple:N2} {OperatingTargetCurrency}\n" +
 //                        $"Skkipped on: {DateTime.Now}");
                     Console.ResetColor();
+                    buyingHigherThanSelling = true;
                 }
                 else if (betterHoldBuying)
 
@@ -950,8 +959,9 @@ namespace mleader.tradingbot.Engine
                 else
                 {
                     var immediateExecute = false;
-                    var skip = false;
-                    if (!AutoExecution)
+                    var skip = buyingHigherThanSelling || betterHoldBuying ||
+                               finalPortfolioValueWhenBuying < TradingStrategy.StopLine;
+                    if (!AutoExecution && !skip)
                     {
                         Console.WriteLine(
                             $"Do you want to execute this buy order? (BUY {buyingAmountInPrinciple} {ExchangeCurrencyBalance?.Currency} at {buyingPriceInPrinciple} {TargetCurrencyBalance?.Currency})");
@@ -1002,7 +1012,6 @@ namespace mleader.tradingbot.Engine
                     if (AutoExecution)
                     {
                         immediateExecute = true;
-                        Console.WriteLine("Auto execution triggered.");
                     }
 
                     if (skip)
@@ -1122,6 +1131,7 @@ namespace mleader.tradingbot.Engine
 //                        $"Skipped Order Amount In {OperatingTargetCurrency}: {buyingAmountInPrinciple * buyingPriceInPrinciple:N2} {OperatingTargetCurrency}\n" +
 //                        $"Skkipped on: {DateTime.Now}");
                     Console.ResetColor();
+                    sellingLowerThanBuying = true;
                 }
                 else if (betterHoldSelling)
                 {
@@ -1158,8 +1168,9 @@ namespace mleader.tradingbot.Engine
                 else
                 {
                     var immediateExecute = false;
-                    var skip = false;
-                    if (!AutoExecution)
+                    var skip = sellingLowerThanBuying || betterHoldSelling ||
+                               finalPortfolioValueWhenSelling < TradingStrategy.StopLine;
+                    if (!AutoExecution && !skip)
                     {
                         Console.WriteLine(
                             $"Do you want to execute this sell order? (SELL {buyingAmountInPrinciple} {ExchangeCurrencyBalance?.Currency} at {buyingPriceInPrinciple} {TargetCurrencyBalance?.Currency})");
@@ -1208,7 +1219,6 @@ namespace mleader.tradingbot.Engine
                     if (AutoExecution)
                     {
                         immediateExecute = true;
-                        Console.WriteLine("Auto execution triggered.");
                     }
 
                     if (skip)
@@ -1480,8 +1490,7 @@ namespace mleader.tradingbot.Engine
         {
             if (exchangePrice <= 0) throw new InvalidCastException();
 
-            return ExchangeCurrencyBalance.Total * exchangePrice +
-                   +TargetCurrencyBalance.Total;
+            return ExchangeCurrencyBalance.Total * exchangePrice + TargetCurrencyBalance.Total;
         }
 
         private bool IsSellingReserveRequirementMatched(decimal sellingAmountInPrinciple,
@@ -1838,14 +1847,14 @@ namespace mleader.tradingbot.Engine
             get
             {
                 var orderbookPriorityAsks = CurrentOrderbook?.Asks?.Where(i => i[0] <= ReasonableAccountLastSellPrice);
-                var orderbookValuatedPrice = (CurrentOrderbook?.Asks?.Min(i => i[0])).GetValueOrDefault();
+                var orderbookValuedPrice = (CurrentOrderbook?.Asks?.Min(i => i[0])).GetValueOrDefault();
                 if (orderbookPriorityAsks?.Count() > 0)
                 {
-                    orderbookValuatedPrice = orderbookPriorityAsks.Sum(i => i[1] * i[0]) /
-                                             orderbookPriorityAsks.Sum(i => i[1]);
+                    orderbookValuedPrice = orderbookPriorityAsks.Sum(i => i[1] * i[0]) /
+                                           orderbookPriorityAsks.Sum(i => i[1]);
                 }
 
-                if (orderbookValuatedPrice <= 0) orderbookValuatedPrice = ReasonableAccountLastSellPrice;
+                if (orderbookValuedPrice <= 0) orderbookValuedPrice = ReasonableAccountLastSellPrice;
 
                 var proposedSellingPrice = new[]
                 {
@@ -1854,15 +1863,22 @@ namespace mleader.tradingbot.Engine
                         PublicWeightedAverageSellPrice,
                         PublicLastSellPrice,
                         PublicWeightedAverageBestSellPrice,
-                        orderbookValuatedPrice
+                        orderbookValuedPrice
+                    }.Average(),
+                    new[]
+                    {
+                        AccountWeightedAverageSellPrice,
+                        ReasonableAccountLastPurchasePrice,
+                        ReasonableAccountLastSellPrice,
+                        orderbookValuedPrice
                     }.Average(),
                     IsBullMarket
                         ? Math.Max(ReasonableAccountWeightedAverageSellPrice, PublicWeightedAverageSellPrice)
                         : new[] {ReasonableAccountWeightedAverageSellPrice, PublicWeightedAverageSellPrice}.Average(),
                     IsBullMarket ? PublicWeightedAverageBestSellPrice : PublicWeightedAverageLowSellPrice,
-                    orderbookValuatedPrice
-//                    (PublicLastSellPrice + ReasonableAccountLastSellPrice + ReasonableAccountLastPurchasePrice) / 3,
-//                    (ReasonableAccountLastSellPrice + orderbookValuatedPrice) / 2
+                    orderbookValuedPrice,
+                    (PublicLastSellPrice + ReasonableAccountLastSellPrice + ReasonableAccountLastPurchasePrice) / 3,
+                    (ReasonableAccountLastSellPrice + orderbookValuedPrice) / 2
                 }.Max();
 
                 orderbookPriorityAsks = CurrentOrderbook?.Asks?.Where(i => i[0] <= proposedSellingPrice);
@@ -1931,7 +1947,8 @@ namespace mleader.tradingbot.Engine
                         : new[] {ReasonableAccountWeightedAveragePurchasePrice, PublicWeightedAveragePurchasePrice}
                             .Average(),
                     IsBullMarket ? PublicWeightedAverageBestPurchasePrice : PublicWeightedAverageLowPurchasePrice,
-                    orderbookValuatedPrice
+                    orderbookValuatedPrice,
+                    AccountWeightedAveragePurchasePrice
 //                    (PublicLastPurchasePrice + ReasonableAccountLastPurchasePrice + ReasonableAccountLastSellPrice +
 //                     PublicLastSellPrice) / 4,
 //                    (ReasonableAccountLastPurchasePrice + orderbookValuatedPrice) / 2
