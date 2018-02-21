@@ -119,9 +119,9 @@ namespace mleader.tradingbot.Engine
             }
 
             var totalExchangeCurrencyBalance =
-                (AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
-                    .Select(c => c.Value?.Total)
-                    .FirstOrDefault()).GetValueOrDefault();
+            (AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
+                .Select(c => c.Value?.Total)
+                .FirstOrDefault()).GetValueOrDefault();
             var totalTargetCurrencyBalance = (AccountBalance?.CurrencyBalances
                 ?.Where(item => item.Key == OperatingTargetCurrency)
                 .Select(c => c.Value?.Total)
@@ -520,6 +520,7 @@ namespace mleader.tradingbot.Engine
             var betterHoldSelling = false;
             var buyingHigherThanSelling = false;
             var sellingLowerThanBuying = false;
+            
 
             bool buyingAmountAvailable = true,
                 sellingAmountAvailable = true,
@@ -673,7 +674,7 @@ namespace mleader.tradingbot.Engine
                                      sellingAmountInPrinciple >= exchangeCurrencyLimit &&
                                      sellingAmountInPrinciple * sellingPriceInPrinciple >= targetCurrencyLimit;
 
-
+≈
 //            var IsBullMarketContinuable =
 //                PublicWeightedAverageBestSellPrice * (1 + AverageTradingChangeRatio) > sellingPriceInPrinciple
 //                ||

@@ -67,6 +67,12 @@ namespace mleader.tradingbot.Engine.Api
             var path = "/currencies";
             PrepareRequest(HttpMethod.Get, path);
             var currencyLimits = (await Rest.GetAsync<string>(path)).JsonDeserialize<List<GdaxCurrencyLimit>>();
+            currencyLimits?.ForEach(item =>
+            {
+                if (item.ExchangeCurrency == "BTC") item.MinimumExchangeAmount = 0.001m;
+                if (item.ExchangeCurrency == "ETH") item.MinimumExchangeAmount = 0.01m;
+                if (item.ExchangeCurrency == "LTC") item.MinimumExchangeAmount = 0.1m;
+            });
             return (currencyLimits?.Count > 0)
                 ? currencyLimits.Select(item => item as CurrencyLimit).ToList()
                 : new List<CurrencyLimit>();
