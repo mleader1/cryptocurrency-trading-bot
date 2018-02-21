@@ -520,7 +520,7 @@ namespace mleader.tradingbot.Engine
             var betterHoldSelling = false;
             var buyingHigherThanSelling = false;
             var sellingLowerThanBuying = false;
-            
+
 
             bool buyingAmountAvailable = true,
                 sellingAmountAvailable = true,
@@ -674,7 +674,7 @@ namespace mleader.tradingbot.Engine
                                      sellingAmountInPrinciple >= exchangeCurrencyLimit &&
                                      sellingAmountInPrinciple * sellingPriceInPrinciple >= targetCurrencyLimit;
 
-≈
+
 //            var IsBullMarketContinuable =
 //                PublicWeightedAverageBestSellPrice * (1 + AverageTradingChangeRatio) > sellingPriceInPrinciple
 //                ||
@@ -753,7 +753,7 @@ namespace mleader.tradingbot.Engine
             Console.WriteLine("\n\t Buying Decision: \t\t\t  Selling Decision:");
 
             Console.WriteLine(
-                $"\t Price:\t{buyingPriceInPrinciple} {TargetCurrencyBalance?.Currency}\t\t\t  {sellingPriceInPrinciple} {TargetCurrencyBalance?.Currency}\t\t\t\t");
+                $"\t Price:\t{buyingPriceInPrinciple} {TargetCurrencyBalance?.Currency}\t\t\t  {sellingPriceInPrinciple} {OperatingTargetCurrency}\t\t\t\t");
             Console.Write($"\t ");
 
             #region Buying Decision
@@ -778,7 +778,7 @@ namespace mleader.tradingbot.Engine
                     {
                         Console.BackgroundColor = ConsoleColor.DarkGreen;
                         Console.Write(
-                            $"BUY {buyingAmountInPrinciple} {ExchangeCurrencyBalance?.Currency} ({buyingAmountInPrinciple * buyingPriceInPrinciple:N2} {TargetCurrencyBalance?.Currency})");
+                            $"BUY {buyingAmountInPrinciple} {ExchangeCurrencyBalance?.Currency} ({buyingAmountInPrinciple * buyingPriceInPrinciple:N2} {OperatingTargetCurrency})");
                     }
                 }
                 else
@@ -791,7 +791,7 @@ namespace mleader.tradingbot.Engine
             {
                 Console.BackgroundColor = ConsoleColor.DarkRed;
                 Console.Write(
-                    $"{(!IsBuyingReserveRequirementMatched(buyingAmountInPrinciple, buyingPriceInPrinciple) || buyingAmountInPrinciple == GetMaximumBuyableAmountBasedOnReserveRatio(buyingPriceInPrinciple) ? $"Limited Reserve - {TargetCurrencyBalance.Available * TradingStrategy.MinimumReservePercentageAfterInitInTargetCurrency:N2} {OperatingTargetCurrency}" : buyingAmountInPrinciple > 0 ? $"Low Fund - Need {(buyingAmountInPrinciple > exchangeCurrencyLimit ? buyingAmountInPrinciple : exchangeCurrencyLimit) * buyingPriceInPrinciple:N2} {TargetCurrencyBalance.Currency}" : "Low Fund")}");
+                    $"{(!IsBuyingReserveRequirementMatched(buyingAmountInPrinciple, buyingPriceInPrinciple) || buyingAmountInPrinciple == GetMaximumBuyableAmountBasedOnReserveRatio(buyingPriceInPrinciple) ? $"Limited Reserve - {TargetCurrencyBalance.Available * TradingStrategy.MinimumReservePercentageAfterInitInTargetCurrency:N2} {OperatingTargetCurrency}" : buyingAmountInPrinciple > 0 ? $"Low Fund - Need {(buyingAmountInPrinciple > exchangeCurrencyLimit ? buyingAmountInPrinciple : exchangeCurrencyLimit) * buyingPriceInPrinciple:N2} {OperatingTargetCurrency}" : "Low Fund")}");
             }
 
             Console.ResetColor();
@@ -819,7 +819,7 @@ namespace mleader.tradingbot.Engine
                     {
                         Console.BackgroundColor = ConsoleColor.DarkGreen;
                         Console.Write(
-                            $"SELL {sellingAmountInPrinciple} {ExchangeCurrencyBalance?.Currency} ({Math.Round(sellingAmountInPrinciple * sellingPriceInPrinciple, 2)} {TargetCurrencyBalance?.Currency})");
+                            $"SELL {sellingAmountInPrinciple} {OperatingExchangeCurrency} ({Math.Round(sellingAmountInPrinciple * sellingPriceInPrinciple, 2)} {OperatingTargetCurrency})");
                     }
                 }
                 else
@@ -832,7 +832,7 @@ namespace mleader.tradingbot.Engine
             {
                 Console.BackgroundColor = ConsoleColor.DarkRed;
                 Console.Write(
-                    $"{(!IsSellingReserveRequirementMatched(sellingAmountInPrinciple, sellingPriceInPrinciple) || sellingAmountInPrinciple == GetMaximumSellableAmountBasedOnReserveRatio(sellingPriceInPrinciple) ? $"Limited Reserve - {ExchangeCurrencyBalance.Available * TradingStrategy.MinimumReservePercentageAfterInitInExchangeCurrency:N4} {OperatingExchangeCurrency}" : sellingAmountInPrinciple > 0 ? $"Low Fund - Need {(sellingAmountInPrinciple > exchangeCurrencyLimit ? sellingAmountInPrinciple : exchangeCurrencyLimit):N4} {ExchangeCurrencyBalance.Currency}" : "Low Fund")}");
+                    $"{(!IsSellingReserveRequirementMatched(sellingAmountInPrinciple, sellingPriceInPrinciple) || sellingAmountInPrinciple == GetMaximumSellableAmountBasedOnReserveRatio(sellingPriceInPrinciple) ? $"Limited Reserve - {ExchangeCurrencyBalance.Available * TradingStrategy.MinimumReservePercentageAfterInitInExchangeCurrency:N4} {OperatingExchangeCurrency}" : sellingAmountInPrinciple > 0 ? $"Low Fund - Need {(sellingAmountInPrinciple > exchangeCurrencyLimit ? sellingAmountInPrinciple : exchangeCurrencyLimit):N4} {OperatingExchangeCurrency}" : "Low Fund")}");
             }
 
             Console.ResetColor();
@@ -851,7 +851,7 @@ namespace mleader.tradingbot.Engine
             Console.WriteLine(
                 $"\t            \t\t{GetCurrentPortfolioEstimatedExchangeValue(PublicLastPurchasePrice):N8} {OperatingExchangeCurrency}\t\t  {GetCurrentPortfolioEstimatedExchangeValue(PublicLastSellPrice):N8} {OperatingExchangeCurrency}\t\t\t\t");
             Console.WriteLine(
-                $"\t After  :\t\t{finalPortfolioValueWhenBuying:N2} {TargetCurrencyBalance?.Currency}\t\t  {finalPortfolioValueWhenSelling:N2} {TargetCurrencyBalance?.Currency}\t\t\t\t");
+                $"\t After  :\t\t{finalPortfolioValueWhenBuying:N2} {OperatingTargetCurrency}\t\t  {finalPortfolioValueWhenSelling:N2} {TargetCurrencyBalance?.Currency}\t\t\t\t");
             Console.WriteLine(
                 $"\t            \t\t{GetCurrentPortfolioEstimatedExchangeValue(buyingPriceInPrinciple):N8} {OperatingExchangeCurrency}\t\t  {GetCurrentPortfolioEstimatedExchangeValue(sellingPriceInPrinciple):N8} {OperatingExchangeCurrency}\t\t\t\t");
             Console.WriteLine(
