@@ -1867,7 +1867,6 @@ namespace mleader.tradingbot.Engine
                     }.Average(),
                     new[]
                     {
-                        AccountWeightedAverageSellPrice,
                         ReasonableAccountLastPurchasePrice,
                         ReasonableAccountLastSellPrice,
                         orderbookValuedPrice
@@ -1876,9 +1875,7 @@ namespace mleader.tradingbot.Engine
                         ? Math.Max(ReasonableAccountWeightedAverageSellPrice, PublicWeightedAverageSellPrice)
                         : new[] {ReasonableAccountWeightedAverageSellPrice, PublicWeightedAverageSellPrice}.Average(),
                     IsBullMarket ? PublicWeightedAverageBestSellPrice : PublicWeightedAverageLowSellPrice,
-                    orderbookValuedPrice,
-                    (PublicLastSellPrice + ReasonableAccountLastSellPrice + ReasonableAccountLastPurchasePrice) / 3,
-                    (ReasonableAccountLastSellPrice + orderbookValuedPrice) / 2
+                    orderbookValuedPrice
                 }.Max();
 
                 orderbookPriorityAsks = CurrentOrderbook?.Asks?.Where(i => i[0] <= proposedSellingPrice);
@@ -1948,7 +1945,9 @@ namespace mleader.tradingbot.Engine
                             .Average(),
                     IsBullMarket ? PublicWeightedAverageBestPurchasePrice : PublicWeightedAverageLowPurchasePrice,
                     orderbookValuatedPrice,
-                    AccountWeightedAveragePurchasePrice
+//                    AccountWeightedAveragePurchasePrice > 0
+//                        ? AccountWeightedAveragePurchasePrice
+//                        : ReasonableAccountWeightedAveragePurchasePrice
 //                    (PublicLastPurchasePrice + ReasonableAccountLastPurchasePrice + ReasonableAccountLastSellPrice +
 //                     PublicLastSellPrice) / 4,
 //                    (ReasonableAccountLastPurchasePrice + orderbookValuatedPrice) / 2

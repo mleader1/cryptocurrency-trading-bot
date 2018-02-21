@@ -227,20 +227,23 @@ namespace mleader.tradingbot.Engine.Api
                     signature = GetApiSignature(nonce),
                     nonce,
                     dateFrom = (DateTime.UtcNow.AddMinutes(
-                                    -1 * (TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision >
-                                          TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision
-                                        ? TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision
-                                        : TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision)) -
-                                new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds,
-                    dateTo = (DateTime.UtcNow.AddMinutes(
-                                  (TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision >
-                                   TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision
-                                      ? TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision
-                                      : TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision)) -
-                              new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds,
+                                    -1 * new[]
+                                    {
+                                        TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision,
+                                        TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision,
+                                        (double) TradingStrategy.PriceCorrectionFrequencyInHours
+                                    }.Max()) -
+                                new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds
+//                    dateTo = (DateTime.UtcNow.AddMinutes(
+//                                  (TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision >
+//                                   TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision
+//                                      ? TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision
+//                                      : TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision)) -
+//                              new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds,
                 });
             ApiRequestCounts++;
-            return latestAccountTradeHistories?.Select(item => item as IOrder).ToList();
+            return latestAccountTradeHistories?.Where(item => item.Status == "d").Select(item => item as IOrder)
+                .ToList();
         }
 
         public void SendWebhookMessage(string message, string username)
