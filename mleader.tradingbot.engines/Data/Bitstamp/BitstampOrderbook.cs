@@ -6,7 +6,7 @@ using Newtonsoft.Json;
 
 namespace mleader.tradingbot.engines.Data.Bitstamp
 {
-    public class BitStampOrderbook : Orderbook
+    public class BitstampOrderbook : Orderbook
     {
         [JsonProperty("timestamp")] public override double Timestamp { get; set; }
 

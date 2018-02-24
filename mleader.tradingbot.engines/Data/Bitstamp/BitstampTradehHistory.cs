@@ -15,8 +15,8 @@ namespace mleader.tradingbot.engines.Data.Bitstamp
         [DataMember(Name = "type")]
         public string Type { get; set; }
 
-        [JsonProperty("type")]
-        [DataMember(Name = "type")]
+        [JsonIgnore]
+        [IgnoreDataMember]
         public OrderType OrderType
         {
             get => Type == "0" ? OrderType.Buy : OrderType.Sell;

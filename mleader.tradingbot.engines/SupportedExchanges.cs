@@ -4,6 +4,7 @@
     {
         Unknown = 0,
         Cex = 1,
-        Gdax = 2
+        Gdax = 2,
+        Bitstamp = 3
     }
 }

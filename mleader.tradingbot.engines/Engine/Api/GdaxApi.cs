@@ -24,6 +24,7 @@ namespace mleader.tradingbot.Engine.Api
         public string SlackWebhook { get; set; }
         public ILogger Logger { get; set; }
         public ITradingStrategy TradingStrategy { get; set; }
+        public string ExchangeName => "GDAX";
 
         private string _apiKey;
         private string _apiSecret;

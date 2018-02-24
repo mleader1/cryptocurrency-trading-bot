@@ -12,6 +12,8 @@ using mleader.tradingbot.engines.Data.Bitstamp;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 using OElite;
+using System.Collections.Specialized;
+using System.Dynamic;
 
 namespace mleader.tradingbot.Engine.Api
 {
@@ -21,6 +23,8 @@ namespace mleader.tradingbot.Engine.Api
         public string SlackWebhook { get; set; }
         public ILogger Logger { get; set; }
         public ITradingStrategy TradingStrategy { get; set; }
+
+        public string ExchangeName => "Bitstamp";
 
         private string _apiKey;
         private string _apiSecret;
@@ -49,10 +53,10 @@ namespace mleader.tradingbot.Engine.Api
                 PriceCorrectionFrequencyInHours = 24,
                 TradingValueBleedRatio = 0.1m
             };
-            Rest = new Rest("https://api.gdax.com",
+            Rest = new Rest("https://www.bitstamp.net/api/v2/",
                 new RestConfig
                 {
-                    OperationMode = RestMode.HTTPRestClient,
+                    OperationMode = RestMode.HTTPClient,
                     UseRestConvertForCollectionSerialization = false
                 },
                 logger);
@@ -68,41 +72,27 @@ namespace mleader.tradingbot.Engine.Api
             };
         }
 
-        public async Task<TradingFees> GetAccountFeesAsync(string operatingExchangeCurrency,
+        public Task<TradingFees> GetAccountFeesAsync(string operatingExchangeCurrency,
             string operatingTargetCurrency)
         {
-            var nonce = GetNonce();
-            var myFees = await Rest.PostAsync<JObject>("get_myfee", new
+            //TODO: Bitstamp does not have API for returning account fee based on trading volumes. A temporary trading fee structure needs to be created.
+            return Task.FromResult(new TradingFees
             {
-                key = _apiKey,
-                signature = GetApiSignature(nonce),
-                nonce
+                SellingFeeInPercentage = 0.0025m,
+                BuyingFeeInPercentage = 0.0025m
             });
-            var fee = new TradingFees
-            {
-                SellingFeeInPercentage = (myFees?.GetValue("data")
-                                             ?.Value<JToken>($"{operatingExchangeCurrency}:{operatingTargetCurrency}")
-                                             ?.Value<decimal>("sell"))
-                                         .GetValueOrDefault() / 100,
-                SellingFeeInAmount = 0,
-                BuyingFeeInPercentage = (myFees?.GetValue("data")
-                                            ?.Value<JToken>($"{operatingExchangeCurrency}:{operatingTargetCurrency}")
-                                            ?.Value<decimal>("buy"))
-                                        .GetValueOrDefault() / 100,
-                BuyingFeeInAmount = 0
-            };
-            return fee;
         }
 
         public async Task<AccountBalance> GetAccountBalanceAsync()
         {
             var nonce = GetNonce();
-            var balance = (await Rest.PostAsync<CexAccountBalance>("balance/", new
+            PrepareRest(new
             {
                 key = _apiKey,
                 signature = GetApiSignature(nonce),
                 nonce
-            }))?.ToAccountBalance();
+            });
+            var balance = (await Rest.PostAsync<BitstampAccountBalance>("balance/"))?.ToAccountBalance();
             return balance;
         }
 
@@ -111,56 +101,43 @@ namespace mleader.tradingbot.Engine.Api
             decimal price)
         {
             var nonce = GetNonce();
-            var order = await Rest.PostAsync<ShortOrder>(
-                $"place_order/{exchangeCurrency}/{targetCurrency}", new
-                {
-                    signature = GetApiSignature(nonce),
-                    key = _apiKey,
-                    nonce,
-                    type = orderType == OrderType.Buy ? "buy" : "sell",
-                    amount,
-                    price
-                });
+            PrepareRest(new
+            {
+                signature = GetApiSignature(nonce),
+                key = _apiKey,
+                nonce,
+                amount,
+                price
+            });
 
-            if (order != null) return order;
-
-            nonce = GetNonce();
-            var error = await Rest.PostAsync<string>(
-                $"place_order/{exchangeCurrency}/{targetCurrency}", new
-                {
-                    signature = GetApiSignature(nonce),
-                    key = _apiKey,
-                    nonce,
-                    type = orderType == OrderType.Buy ? "buy" : "sell",
-                    amount,
-                    price
-                });
-            Logger.LogError(
-                $" [FAILED] BUY Order FAILED: {amount} {exchangeCurrency} at {price} per {exchangeCurrency} \n{error}");
-
-            return null;
+            var order = await Rest.PostAsync<BitstampOrder>(
+                $"{(orderType == OrderType.Buy ? "buy" : "sell")}/{exchangeCurrency?.ToLower()}{targetCurrency?.ToLower()}/");
+            return order;
         }
 
         public async Task<bool> CancelOrderAsync(IOrder order)
         {
             var nonce = GetNonce();
-            var result = await Rest.PostAsync<string>(
-                $"cancel_order/", new
-                {
-                    signature = GetApiSignature(nonce),
-                    key = _apiKey,
-                    nonce,
-                    id = order.OrderId
-                });
-            return BooleanUtils.GetBooleanValueFromObject(result);
+            PrepareRest(new
+            {
+                signature = GetApiSignature(nonce),
+                key = _apiKey,
+                nonce,
+                id = order.OrderId
+            });
+            var result = await Rest.PostAsync<BitstampOrder>(
+                "cancel_order/");
+
+            return result?.OrderId == order.OrderId;
         }
 
         public async Task<List<ITradeHistory>> GetHistoricalTradeHistoryAsync(string operatingExchangeCurrency,
             string operatingTargetCurrency, DateTime? from = null)
         {
             var latestThousandTradeHistories =
-                await Rest.GetAsync<List<CexTradeHistory>>(
-                    $"trade_history/{operatingExchangeCurrency}/{operatingTargetCurrency}/");
+                (await Rest.GetAsync<string>(
+                    $"transactions/{operatingExchangeCurrency?.ToLower()}{operatingTargetCurrency?.ToLower()}/"))
+                .JsonDeserialize<List<BitstampTradehHistory>>();
             return
                 latestThousandTradeHistories?.Where(item => item.Timestamp >= DateTime.UtcNow.AddMinutes(-1 * (
                                                                                                              TradingStrategy
@@ -178,7 +155,8 @@ namespace mleader.tradingbot.Engine.Api
         public async Task<Orderbook> GetPublicOrderbookAsync(string exchangeCurrency, string targetCurrency)
         {
             var orderBook =
-                await Rest.GetAsync<CexOrderbook>($"order_book/{exchangeCurrency}/{targetCurrency}/");
+                await Rest.GetAsync<BitstampOrderbook>(
+                    $"order_book/{exchangeCurrency?.ToLower()}{targetCurrency?.ToLower()}/");
             return orderBook;
         }
 
@@ -186,13 +164,15 @@ namespace mleader.tradingbot.Engine.Api
             string operatingTargetCurrency)
         {
             var nonce = GetNonce();
-            var orders = await Rest.PostAsync<List<ShortOrder>>(
-                $"open_orders/{operatingExchangeCurrency}/{operatingTargetCurrency}", new
-                {
-                    signature = GetApiSignature(nonce),
-                    key = _apiKey,
-                    nonce
-                });
+            PrepareRest(new
+            {
+                signature = GetApiSignature(nonce),
+                key = _apiKey,
+                nonce
+            });
+            var orders = (await Rest.PostAsync<string>(
+                    $"open_orders/{operatingExchangeCurrency?.ToLower()}{operatingTargetCurrency?.ToLower()}/"))
+                .JsonDeserialize<List<BitstampOrder>>();
             orders?.ForEach(item =>
             {
                 item.TargetCurrency = operatingTargetCurrency;
@@ -210,27 +190,15 @@ namespace mleader.tradingbot.Engine.Api
             string operatingTargetCurrency)
         {
             var nonce = GetNonce();
-            var latestAccountTradeHistories = await Rest.PostAsync<List<FullOrder>>(
-                $"archived_orders/{operatingExchangeCurrency}/{operatingTargetCurrency}", new
-                {
-                    key = _apiKey,
-                    signature = GetApiSignature(nonce),
-                    nonce,
-                    dateFrom = (DateTime.UtcNow.AddMinutes(
-                                    -1 * new[]
-                                    {
-                                        TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision,
-                                        TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision,
-                                        (double) TradingStrategy.PriceCorrectionFrequencyInHours
-                                    }.Max()) -
-                                new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds
-//                    dateTo = (DateTime.UtcNow.AddMinutes(
-//                                  (TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision >
-//                                   TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision
-//                                      ? TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision
-//                                      : TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision)) -
-//                              new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds,
-                });
+            PrepareRest(new
+            {
+                key = _apiKey,
+                signature = GetApiSignature(nonce),
+                nonce
+            });
+            var latestAccountTradeHistories = (await Rest.PostAsync<string>(
+                    $"user_transactions/{operatingExchangeCurrency?.ToLower()}{operatingTargetCurrency?.ToLower()}/"))
+                .JsonDeserialize<List<BitstampUserTransaction>>();
             return latestAccountTradeHistories?.Where(item => item.Status == "d").Select(item => item as IOrder)
                 .ToList();
         }
@@ -254,6 +222,11 @@ namespace mleader.tradingbot.Engine.Api
             }
         }
 
+        private void PrepareRest(object values)
+        {
+            var v = values?.JsonSerialize()?.JsonDeserialize<Dictionary<string, string>>();
+            v?.ToList()?.ForEach(item => Rest.Add(item.Key, item.Value));
+        }
 
         private long GetNonce()
         {
@@ -281,12 +254,12 @@ namespace mleader.tradingbot.Engine.Api
             // HMAC input is nonce + username + key
             var hashInput = string.Format(CultureInfo.InvariantCulture, "{0}{1}{2}", nonce, _apiClientId,
                 _apiKey);
-            var hashInputBytes = Encoding.UTF8.GetBytes(hashInput);
+            var hashInputBytes = Encoding.ASCII.GetBytes(hashInput);
 
-            var secretBytes = Encoding.UTF8.GetBytes(_apiSecret);
+            var secretBytes = Encoding.ASCII.GetBytes(_apiSecret);
             var hmac = new HMACSHA256(secretBytes);
             var signatureBytes = hmac.ComputeHash(hashInputBytes);
-            var signature = BitConverter.ToString(signatureBytes).ToUpper().Replace("-", string.Empty);
+            var signature = BitConverter.ToString(signatureBytes).Replace("-", "").ToUpper();
             return signature;
         }
     }

@@ -59,6 +59,7 @@ namespace mleader.tradingbot.Engine.Api
         public ILogger Logger { get; set; }
         public ITradingStrategy TradingStrategy { get; set; }
         public int ApiRequestCounts { get; set; }
+        public string ExchangeName => "CEX.IO";
 
         public async Task<List<CurrencyLimit>> GetCurrencyLimitsAsync()
         {
