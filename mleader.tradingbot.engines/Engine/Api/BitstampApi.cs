@@ -212,7 +212,7 @@ namespace mleader.tradingbot.Engine.Api
                     new Rest(SlackWebhook).PostAsync<string>("", new
                     {
                         text = message,
-                        username = username.IsNullOrEmpty() ? $"MLEADER's Trading Bot [CEX.IO]" : username
+                        username = username.IsNullOrEmpty() ? $"MLEADER's Trading Bot [Bitstamp]" : username
                     }).Wait();
                 }
             }
