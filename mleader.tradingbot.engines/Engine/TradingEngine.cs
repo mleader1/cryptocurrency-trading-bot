@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Net.NetworkInformation;
 using System.Threading;
 using System.Threading.Tasks;
 using mleader.tradingbot.Data;
@@ -119,9 +120,9 @@ namespace mleader.tradingbot.Engine
             }
 
             var totalExchangeCurrencyBalance =
-            (AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
-                .Select(c => c.Value?.Total)
-                .FirstOrDefault()).GetValueOrDefault();
+                (AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
+                    .Select(c => c.Value?.Total)
+                    .FirstOrDefault()).GetValueOrDefault();
             var totalTargetCurrencyBalance = (AccountBalance?.CurrencyBalances
                 ?.Where(item => item.Key == OperatingTargetCurrency)
                 .Select(c => c.Value?.Total)
@@ -1649,7 +1650,9 @@ namespace mleader.tradingbot.Engine
                                                     ?.Where(item =>
                                                         item[0] <= PublicWeightedAverageLowPurchasePrice *
                                                         (1 + AverageTradingChangeRatio))
-                                                    .Sum(item => item[0] * item[1]);
+                                                    .Sum(item => item[0] * item[1]) &&
+                                                PublicWeightedAverageBestSellPrice <= PublicLastSellPrice &&
+                                                PublicWeightedAverageBestSellPrice >= PublicWeightedAverageLowSellPrice;
 
         private bool IsBearMarketContinuable => !IsBullMarket &&
                                                 CurrentOrderbook?.Bids?.Where(item =>
@@ -1710,7 +1713,7 @@ namespace mleader.tradingbot.Engine
                     : 0;
             }
         }
-
+        
         /// <summary>
         /// Find the last public sale price
         /// </summary>
