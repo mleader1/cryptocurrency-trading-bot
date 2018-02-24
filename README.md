@@ -1,5 +1,5 @@
 # cryptocurrency-trading-bot
-A trading bot created for trading on exchanges (currently only support CEX.IO)
+A trading bot created for trading on exchanges (currently support **CEX.IO, GDAX, Bitstamp**)
 
 **Console**
 
@@ -23,17 +23,23 @@ dotnet run
 ```
 You will be asked to set up your Api Key, Secrets etc. at the begining each time when you run the bot. *Leave it running and do the trading unmonitored ONLY WHEN YOU ARE CONFIDENT ENOUGH*. 
 
+
+### CEX.IO 
 Setting your API Keys can be done via https://cex.io/trade/profile#/api Make sure you *activate* your keys before using it.
+### GDAX
+GDAX / Coinbase API can be created at https://www.gdax.com/settings/api  
+### Bitstamp
+Setting your API Keys can be done via https://www.bitstamp.net/account/security/api/ Make sure you *activate* your keys before using it.
 
 The bot will keep running till you stop; If Manual Execution Mode, You will need to confirm whether to execute or skip for *every suggested order* in order to keep the bot working with the next update (i.e. retrieving data from CEX and do the magic).
 
 ## Limits
 
-- The Live Data is limited by CEX.IO API. Particularly the account archived orders are not always up-to-date. Therefore I used the last 24 hours data feed (orders done on CEX and orders executed under your account) as the base.  You can change the hours parameters in *TradingStrategy*, which is instantiated at Startup (*Program.cs*).
+- The Live Data is limited by exchange's API. Particularly the account archived orders are not always up-to-date. You can change the hours parameters in *TradingStrategy*, which is instantiated at Startup (*Program.cs*).
 
-- The API Request threashold is limited by CEX.IO for 600 requests per 10 minutes. The bot currently works out the total requests executed and then automatically pause & wait till allowance is refilled.
+- The API Request threashold is limited by exchange's settings (e.g. CEX.IO for 600 requests per 10 minutes). The bot currently works out the total requests executed and then automatically pause & wait till allowance is refilled.
 
-- The Trading Engine I created for CEX is based on my own personal need. If you wish, you can implement your own TradingEngine using *ITradingEngine*.  TradingEngine is used to *1) Implementation for different trading exchange platforms, 2) Implementation for different trading logics based on different trading strategies, 3) Implementation for different trading currency pairs*
+- The Trading Engine I created is based on my own personal need. If you wish, you can implement your own TradingEngine using *ITradingEngine*.  TradingEngine is used to *1) Implementation for different trading exchange platforms, 2) Implementation for different trading logics based on different trading strategies, 3) Implementation for different trading currency pairs*
 
 - As stated above, each TradingEngine will work only on 1 pair of trading currencies. If you want to trade multiple currenties, you just need to instantiate multiple TradingEngines and run them simultaneously. 
 
@@ -95,6 +101,6 @@ The bot will keep running till you stop; If Manual Execution Mode, You will need
 
 
 ## Contribution
-You are more than welcomed to contribute more into the strategy design or trading features needed in the bot. Currently it only supports CEX.IO trading exchange. 
+You are more than welcomed to contribute more into the strategy design or trading features needed in the bot.  
 
 The bot is designed to cope with multiple trading platforms, your contribution of adding more supported exchanges are welcomed.
