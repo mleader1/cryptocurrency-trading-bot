@@ -183,7 +183,7 @@ namespace mleader.tradingbot
                 AutoDecisionExecution = autoExecution,
                 StopLine = stopLine,
                 MarketChangeSensitivityRatio = sensitivityRatio,
-                PriceCorrectionFrequencyInHours = 12,
+                PriceCorrectionFrequencyInHours = 6,
                 TradingValueBleedRatio = 0.1m
             };
 

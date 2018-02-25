@@ -1093,7 +1093,9 @@ namespace mleader.tradingbot.Engine
                             invalidatedOrders = AccountOpenOrders?.Where(item =>
                                 item.Type == OrderType.Buy &&
                                 item.Price < buyingPriceInPrinciple *
-                                (1 - TradingStrategy.MarketChangeSensitivityRatio));
+                                (1 - TradingStrategy.MarketChangeSensitivityRatio) &&
+                                item.Timestamp.AddHours((double) TradingStrategy.PriceCorrectionFrequencyInHours) <=
+                                DateTime.Now);
                             if (invalidatedOrders?.Count() > 0)
                             {
                                 Console.BackgroundColor = ConsoleColor.DarkRed;
@@ -1143,7 +1145,6 @@ namespace mleader.tradingbot.Engine
 //                        $"Skipped Order Amount In {OperatingTargetCurrency}: {buyingAmountInPrinciple * buyingPriceInPrinciple:N2} {OperatingTargetCurrency}\n" +
 //                        $"Skkipped on: {DateTime.Now}");
                     Console.ResetColor();
-                    sellingLowerThanBuying = true;
                 }
                 else if (betterHoldSelling)
                 {
@@ -1245,7 +1246,9 @@ namespace mleader.tradingbot.Engine
                     {
                         var invalidatedOrders = AccountOpenOrders?.Where(item =>
                             item.Type == OrderType.Buy &&
-                            item.Price >= sellingPriceInPrinciple);
+                            item.Price >= sellingPriceInPrinciple &&
+                            item.Timestamp.AddHours((double) TradingStrategy.PriceCorrectionFrequencyInHours) <=
+                            DateTime.Now);
                         if (invalidatedOrders?.Count() > 0)
                         {
                             Console.BackgroundColor = ConsoleColor.DarkRed;
@@ -1300,7 +1303,9 @@ namespace mleader.tradingbot.Engine
                             invalidatedOrders = AccountOpenOrders?.Where(item =>
                                 item.Type == OrderType.Sell &&
                                 item.Price >= sellingPriceInPrinciple *
-                                (1 + TradingStrategy.MarketChangeSensitivityRatio));
+                                (1 + TradingStrategy.MarketChangeSensitivityRatio) &&
+                                item.Timestamp.AddHours((double) TradingStrategy.PriceCorrectionFrequencyInHours) <=
+                                DateTime.Now);
                             if (invalidatedOrders?.Count() > 0)
                             {
                                 Console.BackgroundColor = ConsoleColor.DarkRed;
