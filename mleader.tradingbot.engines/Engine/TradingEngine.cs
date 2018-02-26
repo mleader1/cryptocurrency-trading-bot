@@ -439,12 +439,24 @@ namespace mleader.tradingbot.Engine
 
         public Task<decimal> GetSellingPriceInPrincipleAsync() => Task.FromResult(Math.Ceiling(ProposedSellingPrice *
                                                                                                (1 +
-                                                                                                BuyingFeeInPercentage) +
+                                                                                                BuyingFeeInPercentage +
+                                                                                                (IsBullMarket &&
+                                                                                                 IsBullMarketContinuable
+                                                                                                    ? TradingStrategy
+                                                                                                        .MarketChangeSensitivityRatio
+                                                                                                    : 0)
+                                                                                               ) +
                                                                                                BuyingFeeInAmount));
 
         public Task<decimal> GetPurchasePriceInPrincipleAsync() => Task.FromResult(Math.Floor(ProposedPurchasePrice *
                                                                                               (1 -
-                                                                                               BuyingFeeInPercentage) -
+                                                                                               BuyingFeeInPercentage -
+                                                                                               (!IsBullMarket &&
+                                                                                                IsBearMarketContinuable
+                                                                                                   ? TradingStrategy
+                                                                                                       .MarketChangeSensitivityRatio
+                                                                                                   : 0)
+                                                                                              ) -
                                                                                               BuyingFeeInAmount));
 
 
@@ -1907,7 +1919,7 @@ namespace mleader.tradingbot.Engine
                         ReasonableAccountLastPurchasePrice,
                         ReasonableAccountLastSellPrice,
                         orderbookValuedPrice
-                    }.Average(),
+                    }.Max(),
                     IsBullMarket
                         ? Math.Max(ReasonableAccountWeightedAverageSellPrice, PublicWeightedAverageSellPrice)
                         : new[] {ReasonableAccountWeightedAverageSellPrice, PublicWeightedAverageSellPrice}.Average(),
@@ -1919,29 +1931,31 @@ namespace mleader.tradingbot.Engine
 
                 if (!(orderbookPriorityAsks?.Count() > 0) || ExchangeCurrencyBalance == null ||
                     TargetCurrencyBalance == null) return proposedSellingPrice;
-                var currentPortfolioValue =
-                    ExchangeCurrencyBalance.Total * PublicLastSellPrice + TargetCurrencyBalance.Total;
+                var currentPortfolioValue = GetCurrentPortfolioEstimatedTargetValue(PublicLastSellPrice);
 
                 foreach (var order in orderbookPriorityAsks)
                 {
-                    var portfolioValueBasedOnOrder =
-                        ExchangeCurrencyBalance.Total * Math.Ceiling(order[0] * (1 - SellingFeeInPercentage) -
-                                                                     SellingFeeInAmount) + TargetCurrencyBalance.Total;
+                    var portfolioValueBasedOnOrder = GetCurrentPortfolioEstimatedTargetValue((decimal) Math.Ceiling(
+                        order[0] * (1 - SellingFeeInPercentage) -
+                        SellingFeeInAmount));
+
                     //i.e. still make a profit
                     if (portfolioValueBasedOnOrder > currentPortfolioValue) return order[0];
                 }
 
                 proposedSellingPrice = proposedSellingPrice * (1 + (IsBullMarket
                                                                    ? (IsBullMarketContinuable
-                                                                       ? Math.Max(AverageTradingChangeRatio,
-                                                                           TradingStrategy.MarketChangeSensitivityRatio)
-                                                                       : Math.Min(AverageTradingChangeRatio,
-                                                                           TradingStrategy.MarketChangeSensitivityRatio)
+                                                                       ? Math.Abs(AverageTradingChangeRatio +
+                                                                                  TradingStrategy
+                                                                                      .MarketChangeSensitivityRatio)
+                                                                       : Math.Abs(AverageTradingChangeRatio -
+                                                                                  TradingStrategy
+                                                                                      .MarketChangeSensitivityRatio)
                                                                    )
-                                                                   : IsBearMarketContinuable
-                                                                       ? 0
-                                                                       : Math.Min(AverageTradingChangeRatio,
-                                                                           TradingStrategy.MarketChangeSensitivityRatio)
+                                                                   : Math.Abs(AverageTradingChangeRatio -
+                                                                              TradingStrategy
+                                                                                  .MarketChangeSensitivityRatio) *
+                                                                     (IsBearMarketContinuable ? 0 : 1)
                                                                ));
 
                 return proposedSellingPrice;
@@ -2030,7 +2044,10 @@ namespace mleader.tradingbot.Engine
                                                                          ? -1 * (AverageTradingChangeRatio +
                                                                                  TradingStrategy
                                                                                      .MarketChangeSensitivityRatio)
-                                                                         : 0
+                                                                         : -1 * Math.Abs(
+                                                                               AverageTradingChangeRatio -
+                                                                               TradingStrategy
+                                                                                   .MarketChangeSensitivityRatio)
                                                                  ));
                 return proposedPurchasePrice;
             }

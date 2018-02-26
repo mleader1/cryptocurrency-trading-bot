@@ -115,14 +115,14 @@ namespace mleader.tradingbot
             }
 
             Console.WriteLine(
-                $"Minutes of historical orders on {useExchange.ToString()} for buying considerations: (default 1)");
+                $"Minutes of historical orders on {useExchange.ToString()} for buying considerations: (default 3)");
             var publicOrderHistoryForBuyingDecision = NumericUtils.GetIntegerValueFromObject(Console.ReadLine());
-            if (publicOrderHistoryForBuyingDecision <= 0) publicOrderHistoryForBuyingDecision = 1;
+            if (publicOrderHistoryForBuyingDecision <= 0) publicOrderHistoryForBuyingDecision = 3;
 
             Console.WriteLine(
-                $"Minutes of historical orders on {useExchange.ToString()} for selling considerations: (default 1)");
+                $"Minutes of historical orders on {useExchange.ToString()} for selling considerations: (default 3)");
             var publicOrderHistoryForSellingDecision = NumericUtils.GetIntegerValueFromObject(Console.ReadLine());
-            if (publicOrderHistoryForSellingDecision <= 0) publicOrderHistoryForSellingDecision = 1;
+            if (publicOrderHistoryForSellingDecision <= 0) publicOrderHistoryForSellingDecision = 3;
 
             Console.WriteLine("Minutes of historical account orders for buying considerations: (default 5)");
             var accountOrderHistoryForBuyingDecision = NumericUtils.GetIntegerValueFromObject(Console.ReadLine());
