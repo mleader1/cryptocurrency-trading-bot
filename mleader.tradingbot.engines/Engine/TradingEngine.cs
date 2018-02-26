@@ -437,9 +437,9 @@ namespace mleader.tradingbot.Engine
             BuyingFeeInAmount = 0;
         }
 
-        public Task<decimal> GetSellingPriceInPrincipleAsync() => Task.FromResult(Math.Ceiling(ProposedSellingPrice *
-                                                                                               (1 +
-                                                                                                BuyingFeeInPercentage +
+        public Task<decimal> GetSellingPriceInPrincipleAsync() => Task.FromResult(Math.Ceiling(ProposedSellingPrice /
+                                                                                               (1 -
+                                                                                                BuyingFeeInPercentage -
                                                                                                 (IsBullMarket &&
                                                                                                  IsBullMarketContinuable
                                                                                                     ? TradingStrategy
