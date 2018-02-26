@@ -119,9 +119,9 @@ namespace mleader.tradingbot.Engine
             }
 
             var totalExchangeCurrencyBalance =
-            (AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
-                .Select(c => c.Value?.Total)
-                .FirstOrDefault()).GetValueOrDefault();
+                (AccountBalance?.CurrencyBalances?.Where(item => item.Key == OperatingExchangeCurrency)
+                    .Select(c => c.Value?.Total)
+                    .FirstOrDefault()).GetValueOrDefault();
             var totalTargetCurrencyBalance = (AccountBalance?.CurrencyBalances
                 ?.Where(item => item.Key == OperatingTargetCurrency)
                 .Select(c => c.Value?.Total)
@@ -1649,7 +1649,11 @@ namespace mleader.tradingbot.Engine
                                                     ?.Where(item =>
                                                         item[0] <= PublicWeightedAverageLowPurchasePrice *
                                                         (1 + AverageTradingChangeRatio))
-                                                    .Sum(item => item[0] * item[1]);
+                                                    .Sum(item => item[0] * item[1]) &&
+                                                (PublicLastPurchasePrice == 0 || PublicLastPurchasePrice >=
+                                                 PublicWeightedAverageLowPurchasePrice) &&
+                                                (PublicLastSellPrice == 0 || PublicLastSellPrice >=
+                                                 PublicWeightedAverageBestSellPrice);
 
         private bool IsBearMarketContinuable => !IsBullMarket &&
                                                 CurrentOrderbook?.Bids?.Where(item =>
@@ -1659,7 +1663,11 @@ namespace mleader.tradingbot.Engine
                                                     ?.Where(item =>
                                                         item[0] <= PublicWeightedAverageBestPurchasePrice *
                                                         (1 + AverageTradingChangeRatio))
-                                                    .Sum(item => item[0] * item[1]);
+                                                    .Sum(item => item[0] * item[1]) &&
+                                                (PublicLastPurchasePrice == 0 || PublicLastPurchasePrice <=
+                                                 PublicWeightedAverageBestPurchasePrice) &&
+                                                (PublicLastSellPrice == 0 || PublicLastSellPrice <=
+                                                 PublicWeightedAverageLowSellPrice);
 
 
         /// <summary>
@@ -1897,15 +1905,16 @@ namespace mleader.tradingbot.Engine
 
                 proposedSellingPrice = proposedSellingPrice * (1 + (IsBullMarket
                                                                    ? (IsBullMarketContinuable
-                                                                       ? Math.Max(AverageTradingChangeRatio,
-                                                                           TradingStrategy.MarketChangeSensitivityRatio)
+                                                                       ? AverageTradingChangeRatio +
+                                                                         TradingStrategy.MarketChangeSensitivityRatio
                                                                        : Math.Min(AverageTradingChangeRatio,
                                                                            TradingStrategy.MarketChangeSensitivityRatio)
                                                                    )
                                                                    : IsBearMarketContinuable
                                                                        ? 0
-                                                                       : Math.Min(AverageTradingChangeRatio,
-                                                                           TradingStrategy.MarketChangeSensitivityRatio)
+                                                                       : Math.Abs(AverageTradingChangeRatio -
+                                                                                  TradingStrategy
+                                                                                      .MarketChangeSensitivityRatio)
                                                                ));
 
                 return proposedSellingPrice;
@@ -1986,14 +1995,14 @@ namespace mleader.tradingbot.Engine
 
                 proposedPurchasePrice = proposedPurchasePrice * (1 + (IsBullMarket
                                                                      ? (IsBullMarketContinuable
-                                                                         ? Math.Min(AverageTradingChangeRatio,
-                                                                             TradingStrategy
-                                                                                 .MarketChangeSensitivityRatio)
+                                                                         ? Math.Abs(AverageTradingChangeRatio -
+                                                                                    TradingStrategy
+                                                                                        .MarketChangeSensitivityRatio)
                                                                          : 0)
                                                                      : IsBearMarketContinuable
-                                                                         ? -1 * Math.Min(AverageTradingChangeRatio,
-                                                                               TradingStrategy
-                                                                                   .MarketChangeSensitivityRatio)
+                                                                         ? -1 * (AverageTradingChangeRatio +
+                                                                                 TradingStrategy
+                                                                                     .MarketChangeSensitivityRatio)
                                                                          : 0
                                                                  ));
                 return proposedPurchasePrice;
