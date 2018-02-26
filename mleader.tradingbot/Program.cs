@@ -23,7 +23,7 @@ namespace mleader.tradingbot
             var useExchange = SupportedExchanges.Unknown;
             while (useExchange == SupportedExchanges.Unknown)
             {
-                Console.WriteLine("Type 1 for CEX.IO, Type 2 for GDAX");
+                Console.WriteLine("Type 1 for CEX.IO, Type 2 for GDAX, Type 3 for Bitstamp:");
                 useExchange =
                     NumericUtils.GetIntegerValueFromObject(Console.ReadLine()).ParseEnum<SupportedExchanges>();
             }
@@ -31,8 +31,21 @@ namespace mleader.tradingbot
 
             Console.Write($"{useExchange.ToString()} API Secret:");
             var secret = Console.ReadLine();
-            Console.Write(
-                $"\n{(useExchange == SupportedExchanges.Cex ? "CEX Username" : (useExchange == SupportedExchanges.Gdax ? "Gdax Pass Phrase" : "Username"))}:");
+            switch (useExchange)
+            {
+                case SupportedExchanges.Cex:
+                    Console.Write("\n CEX Username:");
+                    break;
+                case SupportedExchanges.Gdax:
+                    Console.Write("\n GDAX Pass phrase:");
+                    break;
+                case SupportedExchanges.Bitstamp:
+                    Console.Write("\n Bitstamp Client Id:");
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException();
+            }
+
             var username = Console.ReadLine();
 
 
@@ -101,25 +114,27 @@ namespace mleader.tradingbot
                 Console.ResetColor();
             }
 
-            Console.WriteLine("Minutes of historical orders on CEX.IO for buying considerations: (default 30)");
+            Console.WriteLine(
+                $"Minutes of historical orders on {useExchange.ToString()} for buying considerations: (default 1)");
             var publicOrderHistoryForBuyingDecision = NumericUtils.GetIntegerValueFromObject(Console.ReadLine());
-            if (publicOrderHistoryForBuyingDecision <= 0) publicOrderHistoryForBuyingDecision = 30;
+            if (publicOrderHistoryForBuyingDecision <= 0) publicOrderHistoryForBuyingDecision = 1;
 
-            Console.WriteLine("Minutes of historical orders on CEX.IO for selling considerations: (default 30)");
+            Console.WriteLine(
+                $"Minutes of historical orders on {useExchange.ToString()} for selling considerations: (default 1)");
             var publicOrderHistoryForSellingDecision = NumericUtils.GetIntegerValueFromObject(Console.ReadLine());
-            if (publicOrderHistoryForSellingDecision <= 0) publicOrderHistoryForSellingDecision = 30;
+            if (publicOrderHistoryForSellingDecision <= 0) publicOrderHistoryForSellingDecision = 1;
 
-            Console.WriteLine("Minutes of historical account orders for buying considerations: (default 60)");
+            Console.WriteLine("Minutes of historical account orders for buying considerations: (default 5)");
             var accountOrderHistoryForBuyingDecision = NumericUtils.GetIntegerValueFromObject(Console.ReadLine());
-            if (accountOrderHistoryForBuyingDecision <= 0) accountOrderHistoryForBuyingDecision = 60;
+            if (accountOrderHistoryForBuyingDecision <= 0) accountOrderHistoryForBuyingDecision = 5;
 
-            Console.WriteLine("Minutes of historical account orders for selling considerations: (default 60)");
+            Console.WriteLine("Minutes of historical account orders for selling considerations: (default 5)");
             var accountOrderHistoryForSellingDecision = NumericUtils.GetIntegerValueFromObject(Console.ReadLine());
-            if (accountOrderHistoryForSellingDecision <= 0) accountOrderHistoryForSellingDecision = 60;
+            if (accountOrderHistoryForSellingDecision <= 0) accountOrderHistoryForSellingDecision = 5;
 
-            Console.WriteLine("Minutes change sensitivity ratio in decimal: (default 0.01)");
+            Console.WriteLine("Minutes change sensitivity ratio in decimal: (default 0.005)");
             var sensitivityRatio = NumericUtils.GetDecimalValueFromObject(Console.ReadLine());
-            if (sensitivityRatio <= 0) sensitivityRatio = 0.01m;
+            if (sensitivityRatio <= 0) sensitivityRatio = 0.005m;
 
             Console.WriteLine("Minimum Reserve In Target Currency: (default 0.2)");
             var minimumReservePercentageAfterInitInTargetCurrency =
@@ -168,7 +183,7 @@ namespace mleader.tradingbot
                 AutoDecisionExecution = autoExecution,
                 StopLine = stopLine,
                 MarketChangeSensitivityRatio = sensitivityRatio,
-                PriceCorrectionFrequencyInHours = 12,
+                PriceCorrectionFrequencyInHours = 6,
                 TradingValueBleedRatio = 0.1m
             };
 
@@ -183,6 +198,11 @@ namespace mleader.tradingbot
                 case SupportedExchanges.Cex:
                     api = new CexApi(apiKey, secret, username, slackWebhook,
                         loggerFactory.CreateLogger($"CEX.IO Trading Engine - {exchangeCurrency} - {targetCurrency}"),
+                        tradingStrategy);
+                    break;
+                case SupportedExchanges.Bitstamp:
+                    api = new BitstampApi(apiKey, secret, username, slackWebhook,
+                        loggerFactory.CreateLogger($"Bitstamp Trading Engine - {exchangeCurrency} - {targetCurrency}"),
                         tradingStrategy);
                     break;
                 default:

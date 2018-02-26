@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Net.NetworkInformation;
 using System.Threading;
 using System.Threading.Tasks;
 using mleader.tradingbot.Data;
@@ -165,7 +166,7 @@ namespace mleader.tradingbot.Engine
                                   .GetValueOrDefault() / PublicLastSellPrice
                             : 0))
                     : 0;
-            if (TargetCurrencyLimit?.MinimumExchangeAmount >= InitialSellingCapInExchangeCurrency)
+            if (TargetCurrencyLimit?.MinimumExchangeAmount >= InitialSellingCapInExchangeCurrency * PublicLastSellPrice)
                 InitialSellingCapInExchangeCurrency = PublicLastSellPrice > 0
                     ? (TargetCurrencyLimit.MinimumExchangeAmount == null
                         ? 0
@@ -183,13 +184,9 @@ namespace mleader.tradingbot.Engine
                 InitialSellingCapInExchangeCurrency = totalExchangeCurrencyBalance;
 
 
-            InitialBatchCycles = (int) Math.Max(
-                InitialBuyingCapInTargetCurrency > 0
-                    ? totalTargetCurrencyBalance / InitialBuyingCapInTargetCurrency
-                    : 0,
-                InitialSellingCapInExchangeCurrency > 0
-                    ? totalExchangeCurrencyBalance / InitialSellingCapInExchangeCurrency
-                    : 0);
+            InitialBatchCycles = (int) (TradingStrategy.OrderCapPercentageOnInit > 0
+                ? 1 / TradingStrategy.OrderCapPercentageOnInit
+                : 0);
 
 
             TradingStartBalanceInExchangeCurrency = ExchangeCurrencyBalance.Total;
@@ -312,11 +309,6 @@ namespace mleader.tradingbot.Engine
             }
 
             if (error) return !error;
-
-//            Console.WriteLine(
-//                $"Cex Exchange order executions in last " +
-//                $"{(TradingStrategy.HoursOfPublicHistoryOrderForPurchaseDecision > TradingStrategy.HoursOfPublicHistoryOrderForSellDecision ? TradingStrategy.HoursOfPublicHistoryOrderForPurchaseDecision : TradingStrategy.HoursOfPublicHistoryOrderForSellDecision)} hours: " +
-//                $"\t BUY: {LatestPublicPurchaseHistory?.Count}\t SELL: {LatestPublicSaleHistory?.Count}");
 
             #endregion
 
@@ -694,6 +686,13 @@ namespace mleader.tradingbot.Engine
 
             #endregion
 
+            if (finalPortfolioValueWhenBuying <= 0 && finalPortfolioValueWhenSelling <= 0)
+            {
+                Console.WriteLine("Insufficient data for analysis. Skip...");
+                Thread.Sleep(1000);
+                return;
+            }
+
             #region Draw the Graph
 
             Console.WriteLine("");
@@ -703,6 +702,7 @@ namespace mleader.tradingbot.Engine
             Console.WriteLine("\n\t_____________________________________________________________________");
             Console.WriteLine("\n\t                         Account Balance                            ");
             Console.WriteLine("\t                       +++++++++++++++++++                          ");
+            Console.WriteLine($"\t                              {Api.ExchangeName}");
             Console.ForegroundColor = ConsoleColor.DarkMagenta;
             Console.WriteLine(
                 $"\n\t {OperatingExchangeCurrency}: {ExchangeCurrencyBalance?.Available}{(ExchangeCurrencyBalance?.InOrders > 0 ? " \t\t\t" + ExchangeCurrencyBalance?.InOrders + " In Orders" : "")}" +
@@ -713,7 +713,8 @@ namespace mleader.tradingbot.Engine
             Console.WriteLine("\n\t===================Buy / Sell Price Recommendation===================\n");
             Console.WriteLine($"\t Buying\t\t\t\t\t  Selling  \t\t\t\t");
             Console.WriteLine($"\t ========\t\t\t\t  ========\t\t\t\t");
-            Console.WriteLine($"\t CEX Latest:\t{PublicLastPurchasePrice}\t\t\t  {PublicLastSellPrice}\t\t\t\t");
+            Console.WriteLine(
+                $"\t {Api.ExchangeName} Latest:\t{PublicLastPurchasePrice}\t\t\t  {PublicLastSellPrice}\t\t\t\t");
             Console.WriteLine($"\t Last Executed:\t{AccountLastPurchasePrice}\t\t\t  {AccountLastSellPrice}\t\t\t\t");
             Console.WriteLine(
                 $"\t Next Order:\t{(AccountNextBuyOpenOrder == null ? "N/A" : AccountNextBuyOpenOrder.Amount.ToString(CultureInfo.InvariantCulture) + AccountNextBuyOpenOrder.ExchangeCurrency)}{(AccountNextBuyOpenOrder != null ? "@" + AccountNextBuyOpenOrder.Price : "")}\t\t  " +
@@ -898,6 +899,13 @@ namespace mleader.tradingbot.Engine
 
             #endregion
 
+            if (PublicLastPurchasePrice <= 0 || PublicLastSellPrice <= 0)
+            {
+                Console.Write("Not enough historical buy/sell data. Skip order...");
+                Thread.Sleep(1000);
+                return;
+            }
+
             #region Execute Buy Order
 
             if (buyingAmountAvailable &&
@@ -931,24 +939,27 @@ namespace mleader.tradingbot.Engine
                         item.Timestamp.AddHours((double) TradingStrategy.PriceCorrectionFrequencyInHours) <=
                         DateTime.Now);
                     if (invalidatedOrders?.Count() > 0)
-                        Console.BackgroundColor = ConsoleColor.DarkRed;
-                    Console.ForegroundColor = ConsoleColor.White;
-                    Console.WriteLine("Cancelling open BUY orders that may better off if hold");
-                    foreach (var invalidatedOrder in invalidatedOrders)
                     {
-                        Task.Run(async () =>
+                        Console.BackgroundColor = ConsoleColor.DarkRed;
+
+                        Console.ForegroundColor = ConsoleColor.White;
+                        Console.WriteLine("Cancelling open BUY orders that may better off if hold");
+                        foreach (var invalidatedOrder in invalidatedOrders)
                         {
-                            try
+                            Task.Run(async () =>
                             {
-                                Console.WriteLine(
-                                    $"Attempt to cancel BUY order {invalidatedOrder.OrderId} - {invalidatedOrder.Amount}@{invalidatedOrder.Price}");
-                                await CancelOrderAsync(invalidatedOrder);
-                            }
-                            catch (Exception ex)
-                            {
-                                Console.WriteLine(ex.Message);
-                            }
-                        }).RunInBackgroundAndForget();
+                                try
+                                {
+                                    Console.WriteLine(
+                                        $"Attempt to cancel BUY order {invalidatedOrder.OrderId} - {invalidatedOrder.Amount}@{invalidatedOrder.Price}");
+                                    await CancelOrderAsync(invalidatedOrder);
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine(ex.Message);
+                                }
+                            }).RunInBackgroundAndForget();
+                        }
                     }
 
                     Console.ResetColor();
@@ -1082,7 +1093,9 @@ namespace mleader.tradingbot.Engine
                             invalidatedOrders = AccountOpenOrders?.Where(item =>
                                 item.Type == OrderType.Buy &&
                                 item.Price < buyingPriceInPrinciple *
-                                (1 - TradingStrategy.MarketChangeSensitivityRatio));
+                                (1 - TradingStrategy.MarketChangeSensitivityRatio) &&
+                                item.Timestamp.AddHours((double) TradingStrategy.PriceCorrectionFrequencyInHours) <=
+                                DateTime.Now);
                             if (invalidatedOrders?.Count() > 0)
                             {
                                 Console.BackgroundColor = ConsoleColor.DarkRed;
@@ -1132,7 +1145,6 @@ namespace mleader.tradingbot.Engine
 //                        $"Skipped Order Amount In {OperatingTargetCurrency}: {buyingAmountInPrinciple * buyingPriceInPrinciple:N2} {OperatingTargetCurrency}\n" +
 //                        $"Skkipped on: {DateTime.Now}");
                     Console.ResetColor();
-                    sellingLowerThanBuying = true;
                 }
                 else if (betterHoldSelling)
                 {
@@ -1142,22 +1154,24 @@ namespace mleader.tradingbot.Engine
                     var invalidatedOrders = AccountOpenOrders?.Where(item =>
                         item.Type == OrderType.Sell && item.Price <= sellingPriceInPrinciple);
                     if (invalidatedOrders?.Count() > 0)
-                        Console.BackgroundColor = ConsoleColor.DarkRed;
-                    Console.ForegroundColor = ConsoleColor.White;
-                    Console.WriteLine("Cancelling open SELL orders that may better off if hold");
-                    foreach (var invalidatedOrder in invalidatedOrders)
                     {
-                        Task.Run(async () =>
+                        Console.BackgroundColor = ConsoleColor.DarkRed;
+                        Console.ForegroundColor = ConsoleColor.White;
+                        Console.WriteLine("Cancelling open SELL orders that may better off if hold");
+                        foreach (var invalidatedOrder in invalidatedOrders)
                         {
-                            try
+                            Task.Run(async () =>
                             {
-                                await CancelOrderAsync(invalidatedOrder);
-                            }
-                            catch (Exception ex)
-                            {
-                                Console.WriteLine(ex.Message);
-                            }
-                        }).RunInBackgroundAndForget();
+                                try
+                                {
+                                    await CancelOrderAsync(invalidatedOrder);
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine(ex.Message);
+                                }
+                            }).RunInBackgroundAndForget();
+                        }
                     }
 
                     Console.ResetColor();
@@ -1232,7 +1246,9 @@ namespace mleader.tradingbot.Engine
                     {
                         var invalidatedOrders = AccountOpenOrders?.Where(item =>
                             item.Type == OrderType.Buy &&
-                            item.Price >= sellingPriceInPrinciple);
+                            item.Price >= sellingPriceInPrinciple &&
+                            item.Timestamp.AddHours((double) TradingStrategy.PriceCorrectionFrequencyInHours) <=
+                            DateTime.Now);
                         if (invalidatedOrders?.Count() > 0)
                         {
                             Console.BackgroundColor = ConsoleColor.DarkRed;
@@ -1287,7 +1303,9 @@ namespace mleader.tradingbot.Engine
                             invalidatedOrders = AccountOpenOrders?.Where(item =>
                                 item.Type == OrderType.Sell &&
                                 item.Price >= sellingPriceInPrinciple *
-                                (1 + TradingStrategy.MarketChangeSensitivityRatio));
+                                (1 + TradingStrategy.MarketChangeSensitivityRatio) &&
+                                item.Timestamp.AddHours((double) TradingStrategy.PriceCorrectionFrequencyInHours) <=
+                                DateTime.Now);
                             if (invalidatedOrders?.Count() > 0)
                             {
                                 Console.BackgroundColor = ConsoleColor.DarkRed;
@@ -1328,7 +1346,8 @@ namespace mleader.tradingbot.Engine
                     LastTimeBuyOrderExecution.AddMinutes(
                         (double) (Math.Max(TradingStrategy.MinutesOfAccountHistoryOrderForPurchaseDecision,
                                       TradingStrategy.MinutesOfPublicHistoryOrderForPurchaseDecision) *
-                                  (1m + AverageTradingChangeRatio * 10m))) < DateTime.Now &&
+                                  Math.Max(1m + AverageTradingChangeRatio,
+                                      1m + TradingStrategy.MarketChangeSensitivityRatio))) < DateTime.Now &&
                     AccountLastBuyOpenOrder.Timestamp.AddHours((double) TradingStrategy
                         .PriceCorrectionFrequencyInHours) <=
                     DateTime.Now)
@@ -1385,7 +1404,8 @@ namespace mleader.tradingbot.Engine
                     LastTimeSellOrderExecution.AddMinutes(
                         (double) (Math.Max(TradingStrategy.MinutesOfAccountHistoryOrderForSellDecision,
                                       TradingStrategy.MinutesOfPublicHistoryOrderForSellDecision) *
-                                  (1m + AverageTradingChangeRatio * 10m))) < DateTime.Now &&
+                                  Math.Max(1m + AverageTradingChangeRatio,
+                                      1m + TradingStrategy.MarketChangeSensitivityRatio))) < DateTime.Now &&
                     AccountLastSellOpenOrder.Timestamp.AddHours(
                         (double) TradingStrategy.PriceCorrectionFrequencyInHours) <=
                     DateTime.Now)
@@ -1475,7 +1495,7 @@ namespace mleader.tradingbot.Engine
 
         private decimal GetCurrentPortfolioEstimatedExchangeValue(decimal exchangePrice)
         {
-            if (exchangePrice <= 0) throw new InvalidOperationException();
+//            if (exchangePrice <= 0) throw new InvalidOperationException();
 
 //            return ExchangeCurrencyBalance.Available + (AccountOpenOrders
 //                       ?.Where(item => item.Type == OrderType.Sell)
@@ -1484,13 +1504,13 @@ namespace mleader.tradingbot.Engine
 //                       ?.Where(item => item.Type == OrderType.Buy)
 //                       .Sum(item => item.Amount * item.Price / exchangePrice))
 //                   .GetValueOrDefault();
-            return ExchangeCurrencyBalance.Total + TargetCurrencyBalance.Total / exchangePrice;
+            return exchangePrice > 0 ? ExchangeCurrencyBalance.Total + TargetCurrencyBalance.Total / exchangePrice : 0;
         }
 
         private decimal GetCurrentPortfolioEstimatedTargetValue(decimal exchangePrice)
         {
-            if (exchangePrice <= 0) throw new InvalidCastException();
-
+//            if (exchangePrice <= 0) throw new InvalidCastException();
+//
             return ExchangeCurrencyBalance.Total * exchangePrice + TargetCurrencyBalance.Total;
         }
 
@@ -1604,7 +1624,7 @@ namespace mleader.tradingbot.Engine
         private void SendWebhookMessage(string message)
         {
             Api.SendWebhookMessage(message,
-                $"MLEADER's CEX.IO Trading Bot - {OperatingExchangeCurrency}/{OperatingTargetCurrency} ");
+                $"MLEADER's {Api.ExchangeName} Trading Bot - {OperatingExchangeCurrency}/{OperatingTargetCurrency} ");
         }
 
 
@@ -1613,20 +1633,28 @@ namespace mleader.tradingbot.Engine
         #region Staging Calculations
 
         private decimal PublicUpLevelSell1 =>
-            Math.Abs(PublicWeightedAverageBestSellPrice - PublicWeightedAverageSellPrice) /
-            PublicWeightedAverageSellPrice;
+            PublicWeightedAverageSellPrice > 0
+                ? Math.Abs(PublicWeightedAverageBestSellPrice - PublicWeightedAverageSellPrice) /
+                  PublicWeightedAverageSellPrice
+                : 0;
 
         private decimal PublicUpLevelSell2 =>
-            Math.Abs(PublicWeightedAverageLowSellPrice - PublicWeightedAverageSellPrice) /
-            PublicWeightedAverageSellPrice;
+            PublicWeightedAverageSellPrice > 0
+                ? Math.Abs(PublicWeightedAverageLowSellPrice - PublicWeightedAverageSellPrice) /
+                  PublicWeightedAverageSellPrice
+                : 0;
 
         private decimal PublicUpLevelPurchase1 =>
-            Math.Abs(PublicWeightedAverageBestPurchasePrice - PublicWeightedAveragePurchasePrice) /
-            PublicWeightedAveragePurchasePrice;
+            PublicWeightedAveragePurchasePrice > 0
+                ? Math.Abs(PublicWeightedAverageBestPurchasePrice - PublicWeightedAveragePurchasePrice) /
+                  PublicWeightedAveragePurchasePrice
+                : 0;
 
         private decimal PublicUpLevelPurchase2 =>
-            Math.Abs(PublicWeightedAverageLowPurchasePrice - PublicWeightedAveragePurchasePrice) /
-            PublicWeightedAveragePurchasePrice;
+            PublicWeightedAveragePurchasePrice > 0
+                ? Math.Abs(PublicWeightedAverageLowPurchasePrice - PublicWeightedAveragePurchasePrice) /
+                  PublicWeightedAveragePurchasePrice
+                : 0;
 
         #endregion
 
@@ -1681,7 +1709,7 @@ namespace mleader.tradingbot.Engine
                 var totalAmount = LatestPublicSaleHistory.Sum(item => item.Amount);
                 return totalAmount > 0
                     ? LatestPublicSaleHistory.Sum(item => item.Amount * item.Price) / totalAmount
-                    : 0;
+                    : PublicLastSellPrice;
             }
         }
 
@@ -1698,7 +1726,7 @@ namespace mleader.tradingbot.Engine
                 var totalAmount = (bestFirstThirdPrices?.Sum(item => item.Amount)).GetValueOrDefault();
                 return totalAmount > 0
                     ? bestFirstThirdPrices.Sum(item => item.Amount * item.Price) / totalAmount
-                    : 0;
+                    : PublicLastSellPrice;
             }
         }
 
@@ -1715,7 +1743,7 @@ namespace mleader.tradingbot.Engine
                 var totalAmount = (bestLastThirdPrices?.Sum(item => item.Amount)).GetValueOrDefault();
                 return totalAmount > 0
                     ? bestLastThirdPrices.Sum(item => item.Amount * item.Price) / totalAmount
-                    : 0;
+                    : PublicLastSellPrice;
             }
         }
 
@@ -1741,7 +1769,7 @@ namespace mleader.tradingbot.Engine
                 return totalAmount > 0
                     ? LatestPublicPurchaseHistory.Sum(item =>
                           item.Amount * item.Price) / totalAmount
-                    : 0;
+                    : PublicLastPurchasePrice;
             }
         }
 
@@ -1754,11 +1782,11 @@ namespace mleader.tradingbot.Engine
             get
             {
                 var bestFirstThirdPrices = LatestPublicPurchaseHistory?.OrderBy(item => item.Price)
-                    .Take(LatestPublicPurchaseHistory.Count / 3);
+                    .Take((int) Math.Ceiling((decimal) LatestPublicPurchaseHistory.Count / 3));
                 var totalAmount = (bestFirstThirdPrices?.Sum(item => item.Amount)).GetValueOrDefault();
                 return totalAmount > 0
                     ? bestFirstThirdPrices.Sum(item => item.Amount * item.Price) / totalAmount
-                    : 0;
+                    : PublicLastPurchasePrice;
             }
         }
 
@@ -1771,11 +1799,11 @@ namespace mleader.tradingbot.Engine
             get
             {
                 var bestLastThirdPrices = LatestPublicPurchaseHistory?.OrderByDescending(item => item.Price)
-                    .Take(LatestPublicPurchaseHistory.Count / 3);
+                    .Take((int) Math.Ceiling((decimal) LatestPublicPurchaseHistory.Count / 3));
                 var totalAmount = (bestLastThirdPrices?.Sum(item => item.Amount)).GetValueOrDefault();
                 return totalAmount > 0
                     ? bestLastThirdPrices.Sum(item => item.Amount * item.Price) / totalAmount
-                    : 0;
+                    : PublicLastPurchasePrice;
             }
         }
 
@@ -1803,7 +1831,7 @@ namespace mleader.tradingbot.Engine
                 return totalAmount > 0
                     ? LatestAccountPurchaseHistory.Sum(item =>
                           item.Amount * item.Price) / totalAmount
-                    : 0;
+                    : PublicLastPurchasePrice;
             }
         }
 
@@ -1819,7 +1847,7 @@ namespace mleader.tradingbot.Engine
                 return totalAmount > 0
                     ? LatestAccountSaleHistory.Sum(item =>
                           item.Amount * item.Price) / totalAmount
-                    : 0;
+                    : PublicLastSellPrice;
             }
         }
 
@@ -1885,7 +1913,7 @@ namespace mleader.tradingbot.Engine
                         : new[] {ReasonableAccountWeightedAverageSellPrice, PublicWeightedAverageSellPrice}.Average(),
                     IsBullMarket ? PublicWeightedAverageBestSellPrice : PublicWeightedAverageLowSellPrice,
                     orderbookValuedPrice
-                }.Max();
+                }.Average();
 
                 orderbookPriorityAsks = CurrentOrderbook?.Asks?.Where(i => i[0] <= proposedSellingPrice);
 
@@ -1905,16 +1933,15 @@ namespace mleader.tradingbot.Engine
 
                 proposedSellingPrice = proposedSellingPrice * (1 + (IsBullMarket
                                                                    ? (IsBullMarketContinuable
-                                                                       ? AverageTradingChangeRatio +
-                                                                         TradingStrategy.MarketChangeSensitivityRatio
+                                                                       ? Math.Max(AverageTradingChangeRatio,
+                                                                           TradingStrategy.MarketChangeSensitivityRatio)
                                                                        : Math.Min(AverageTradingChangeRatio,
                                                                            TradingStrategy.MarketChangeSensitivityRatio)
                                                                    )
                                                                    : IsBearMarketContinuable
                                                                        ? 0
-                                                                       : Math.Abs(AverageTradingChangeRatio -
-                                                                                  TradingStrategy
-                                                                                      .MarketChangeSensitivityRatio)
+                                                                       : Math.Min(AverageTradingChangeRatio,
+                                                                           TradingStrategy.MarketChangeSensitivityRatio)
                                                                ));
 
                 return proposedSellingPrice;
@@ -1961,7 +1988,7 @@ namespace mleader.tradingbot.Engine
 //                    (PublicLastPurchasePrice + ReasonableAccountLastPurchasePrice + ReasonableAccountLastSellPrice +
 //                     PublicLastSellPrice) / 4,
 //                    (ReasonableAccountLastPurchasePrice + orderbookValuatedPrice) / 2
-                }.Min();
+                }.Average();
 
                 orderbookPriorityBids = CurrentOrderbook?.Bids?.Where(i => i[0] >= proposedPurchasePrice);
                 var exchangeCurrencyBalance =
@@ -2011,8 +2038,10 @@ namespace mleader.tradingbot.Engine
 
         private decimal ReasonableAccountLastPurchasePrice =>
             Math.Abs(AccountLastPurchasePrice - PublicLastPurchasePrice) /
-            Math.Min(PublicLastPurchasePrice,
-                AccountLastPurchasePrice > 0 ? AccountLastPurchasePrice : PublicLastPurchasePrice) >
+            (PublicLastPurchasePrice > 0
+                ? Math.Min(PublicLastPurchasePrice,
+                    AccountLastPurchasePrice > 0 ? AccountLastPurchasePrice : PublicLastPurchasePrice)
+                : 1) >
             TradingStrategy.MarketChangeSensitivityRatio
                 ? PublicLastPurchasePrice
                 : AccountLastPurchasePrice;
@@ -2022,8 +2051,10 @@ namespace mleader.tradingbot.Engine
                                                                   ? AccountLastSellPrice
                                                                   : PublicLastSellPrice) > 0
             ? (
-                Math.Abs(AccountLastSellPrice - PublicLastSellPrice) / Math.Min(PublicLastSellPrice,
-                    AccountLastSellPrice > 0 ? AccountLastSellPrice : PublicLastSellPrice) >
+                Math.Abs(AccountLastSellPrice - PublicLastSellPrice) / (PublicLastSellPrice > 0
+                    ? Math.Min(PublicLastSellPrice,
+                        AccountLastSellPrice > 0 ? AccountLastSellPrice : PublicLastSellPrice)
+                    : 1) >
                 TradingStrategy.MarketChangeSensitivityRatio
                     ? PublicLastSellPrice
                     : AccountLastSellPrice)
@@ -2034,9 +2065,11 @@ namespace mleader.tradingbot.Engine
                 PublicLastSellPrice) > 0
                 ? (
                     Math.Abs(AccountWeightedAverageSellPrice - PublicLastSellPrice) /
-                    Math.Min(
-                        AccountWeightedAverageSellPrice > 0 ? AccountWeightedAverageSellPrice : PublicLastSellPrice,
-                        PublicLastSellPrice) >
+                    (PublicLastSellPrice > 0
+                        ? Math.Min(
+                            AccountWeightedAverageSellPrice > 0 ? AccountWeightedAverageSellPrice : PublicLastSellPrice,
+                            PublicLastSellPrice)
+                        : 1) >
                     TradingStrategy.MarketChangeSensitivityRatio
                         ? PublicLastSellPrice
                         : AccountWeightedAverageSellPrice)
@@ -2048,10 +2081,12 @@ namespace mleader.tradingbot.Engine
                                                                                  : PublicLastPurchasePrice) > 0
             ? (
                 Math.Abs(AccountWeightedAveragePurchasePrice - PublicLastPurchasePrice) /
-                Math.Min(PublicLastPurchasePrice,
-                    AccountWeightedAveragePurchasePrice > 0
-                        ? AccountWeightedAveragePurchasePrice
-                        : PublicLastPurchasePrice) >
+                (PublicLastPurchasePrice > 0
+                    ? Math.Min(PublicLastPurchasePrice,
+                        AccountWeightedAveragePurchasePrice > 0
+                            ? AccountWeightedAveragePurchasePrice
+                            : PublicLastPurchasePrice)
+                    : 1) >
                 TradingStrategy.MarketChangeSensitivityRatio
                     ? PublicLastPurchasePrice
                     : AccountWeightedAveragePurchasePrice)

@@ -15,6 +15,7 @@ namespace mleader.tradingbot.Engine
         string SlackWebhook { get; set; }
         ILogger Logger { get; set; }
         ITradingStrategy TradingStrategy { get; set; }
+        string ExchangeName { get; }
 
         Task<List<CurrencyLimit>> GetCurrencyLimitsAsync();
         Task<TradingFees> GetAccountFeesAsync(string exchangeCurrency, string targetCurrency);

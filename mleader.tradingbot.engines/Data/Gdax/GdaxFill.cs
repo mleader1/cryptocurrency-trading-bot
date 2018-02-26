@@ -14,7 +14,9 @@ namespace mleader.tradingbot.engines.Data.Gdax
 
         [DataMember(Name = "created_at")]
         [JsonProperty("created_at")]
-        public DateTime Timestamp { get; }
+        public DateTime CreatedAt { get; set; }
+
+        public DateTime Timestamp => CreatedAt;
 
 
         [DataMember(Name = "side")]
