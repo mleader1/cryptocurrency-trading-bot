@@ -918,6 +918,67 @@ namespace mleader.tradingbot.Engine
                 return;
             }
 
+            #region Cancel orders that have better potentials
+
+            if (isBullMarket && isBullMarketContinuable || !isBullMarket && isBearMarketContinuable)
+            {
+                var betterHoldBids = AccountOpenOrders?.Where(item =>
+                    CurrentOrderbook?.Bids?.Take(10)?.Count(bid => bid[0] >= item.Price) > 0);
+                if (betterHoldBids?.Count() > 0)
+                {
+                    Console.BackgroundColor = ConsoleColor.DarkRed;
+                    Console.ForegroundColor = ConsoleColor.White;
+                    Console.WriteLine("Cancelling open BUY orders that may better off if hold");
+                    foreach (var invalidatedOrder in betterHoldBids)
+                    {
+                        Task.Run(async () =>
+                        {
+                            try
+                            {
+                                Console.WriteLine(
+                                    $"Attempt to cancel BUY order {invalidatedOrder.OrderId} - {invalidatedOrder.Amount}@{invalidatedOrder.Price}");
+                                await CancelOrderAsync(invalidatedOrder);
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine(ex.Message);
+                            }
+                        }).RunInBackgroundAndForget();
+                    }
+                }
+
+                var betterHoldAsks = AccountOpenOrders?.Where(item =>
+                    CurrentOrderbook?.Asks?.Take(10)?.Count(bid => bid[0] <= item.Price) > 0);
+                if (betterHoldAsks?.Count() > 0)
+                {
+                    Console.BackgroundColor = ConsoleColor.DarkRed;
+                    Console.ForegroundColor = ConsoleColor.White;
+                    Console.WriteLine("Cancelling open SELL orders that may better off if hold");
+                    foreach (var invalidatedOrder in betterHoldAsks)
+                    {
+                        Task.Run(async () =>
+                        {
+                            try
+                            {
+                                Console.WriteLine(
+                                    $"Attempt to cancel SELL order {invalidatedOrder.OrderId} - {invalidatedOrder.Amount}@{invalidatedOrder.Price}");
+                                await CancelOrderAsync(invalidatedOrder);
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine(ex.Message);
+                            }
+                        }).RunInBackgroundAndForget();
+                    }
+                }
+
+                Console.ResetColor();
+            }
+
+            #endregion
+
+            #endregion
+
             #region Execute Buy Order
 
             if (buyingAmountAvailable &&
@@ -953,9 +1014,8 @@ namespace mleader.tradingbot.Engine
                     if (invalidatedOrders?.Count() > 0)
                     {
                         Console.BackgroundColor = ConsoleColor.DarkRed;
-
                         Console.ForegroundColor = ConsoleColor.White;
-                        Console.WriteLine("Cancelling open BUY orders that may better off if hold");
+                        Console.WriteLine("Cancelling open BUY orders that may better off if hold [1]");
                         foreach (var invalidatedOrder in invalidatedOrders)
                         {
                             Task.Run(async () =>
@@ -973,6 +1033,7 @@ namespace mleader.tradingbot.Engine
                             }).RunInBackgroundAndForget();
                         }
                     }
+
 
                     Console.ResetColor();
                 }
@@ -1074,7 +1135,6 @@ namespace mleader.tradingbot.Engine
 
                             Console.ResetColor();
                         }
-
 
                         //execute buy order
                         var order = await Api.ExecuteOrderAsync(OrderType.Buy, OperatingExchangeCurrency,
