@@ -49,6 +49,8 @@ namespace mleader.tradingbot.Engine
         private decimal InitialBuyingCapInTargetCurrency { get; set; }
         private decimal InitialSellingCapInExchangeCurrency { get; set; }
         private int InitialBatchCycles { get; set; }
+        public decimal NextBuyPriceProposalInRecord { get; set; }
+        public decimal NextSellPriceProposalInRecord { get; set; }
 
         private System.Timers.Timer RequestTimer { get; set; }
 
@@ -113,10 +115,11 @@ namespace mleader.tradingbot.Engine
         public async Task FirstBatchPreparationAsync()
         {
             await RefreshCurrencyLimitsAsync();
-            if (!await InitBaseDataAsync())
+            while (!await InitBaseDataAsync())
             {
-                Console.WriteLine("Init Data Failed. Program Terminated.");
-                return;
+                Console.WriteLine(
+                    "Init Data Failed or Insufficient Public Order History in the parameteriszed period. Retrying...");
+                Thread.Sleep(3000);
             }
 
             var totalExchangeCurrencyBalance =
@@ -226,7 +229,7 @@ namespace mleader.tradingbot.Engine
 
                 try
                 {
-                    MarkeDecisionsAsync().Wait();
+                    MakeDecisionsAsync().Wait();
                 }
                 catch (Exception e)
                 {
@@ -250,9 +253,11 @@ namespace mleader.tradingbot.Engine
 
         #region Price Calculations        
 
-        public async Task<bool> MarkeDecisionsAsync()
+        public async Task<bool> MakeDecisionsAsync()
         {
-            var error = !(await InitBaseDataAsync());
+            var error = !await InitBaseDataAsync();
+            if (error) return !error;
+
             try
             {
                 await DrawDecisionUIsAsync();
@@ -300,6 +305,7 @@ namespace mleader.tradingbot.Engine
                         item.OrderType == OrderType.Sell && item.Timestamp >=
                         DateTime.UtcNow.AddMinutes(-1 * TradingStrategy.MinutesOfPublicHistoryOrderForSellDecision))
                     .Select(item => item).ToList();
+                if (!(LatestPublicPurchaseHistory?.Count > 0 && LatestPublicSaleHistory?.Count > 0)) error = true;
             }
             else
             {
@@ -573,6 +579,11 @@ namespace mleader.tradingbot.Engine
                                            GetCurrentPortfolioEstimatedExchangeValue(sellingPriceInPrinciple) *
                                            (1 - SellingFeeInPercentage) - SellingFeeInAmount;
             }
+
+            if (buyingPriceInPrinciple > NextBuyPriceProposalInRecord && NextBuyPriceProposalInRecord > 0)
+                buyingPriceInPrinciple = NextBuyPriceProposalInRecord;
+            if (sellingPriceInPrinciple < NextSellPriceProposalInRecord && NextSellPriceProposalInRecord > 0)
+                sellingPriceInPrinciple = NextSellPriceProposalInRecord;
 
             if (isBullMarket && isBullMarketContinuable)
             {
@@ -922,8 +933,13 @@ namespace mleader.tradingbot.Engine
 
             if (isBullMarket && isBullMarketContinuable || !isBullMarket && isBearMarketContinuable)
             {
-                var betterHoldBids = AccountOpenOrders?.Where(item =>
-                    CurrentOrderbook?.Bids?.Take(10)?.Count(bid => bid[0] >= item.Price) > 0);
+                var betterHoldBids = AccountOpenOrders?.Where(item => item.Type == OrderType.Buy &&
+                                                                      CurrentOrderbook?.Asks?.Take(10)
+                                                                          ?.Count(bid => bid[0] >= item.Price) >
+                                                                      0 &&
+                                                                      CurrentOrderbook?.Bids?.Take(10)
+                                                                          ?.Count(ask => ask[0] <= item.Price) >
+                                                                      0);
                 if (betterHoldBids?.Count() > 0)
                 {
                     Console.BackgroundColor = ConsoleColor.DarkRed;
@@ -947,14 +963,17 @@ namespace mleader.tradingbot.Engine
                     }
                 }
 
-                var betterHoldAsks = AccountOpenOrders?.Where(item =>
-                    CurrentOrderbook?.Asks?.Take(10)?.Count(bid => bid[0] <= item.Price) > 0);
-                if (betterHoldAsks?.Count() > 0)
+                var betterHoldAsks = AccountOpenOrders?.Where(item => item.Type == OrderType.Sell &&
+                                                                      CurrentOrderbook?.Asks?.Take(10)
+                                                                          ?.Count(ask => ask[0] <= item.Price) > 0 &&
+                                                                      CurrentOrderbook?.Bids?.Take(10)
+                                                                          ?.Count(bid => bid[0] >= item.Price) > 0);
+                if (betterHoldBids?.Count() > 0)
                 {
                     Console.BackgroundColor = ConsoleColor.DarkRed;
                     Console.ForegroundColor = ConsoleColor.White;
                     Console.WriteLine("Cancelling open SELL orders that may better off if hold");
-                    foreach (var invalidatedOrder in betterHoldAsks)
+                    foreach (var invalidatedOrder in betterHoldBids)
                     {
                         Task.Run(async () =>
                         {
@@ -977,7 +996,6 @@ namespace mleader.tradingbot.Engine
 
             #endregion
 
-            #endregion
 
             #region Execute Buy Order
 
@@ -1157,6 +1175,34 @@ namespace mleader.tradingbot.Engine
                                 $" *Current Value in {OperatingExchangeCurrency}:* {(PublicLastSellPrice > 0 ? originalPortfolioValueWhenBuying / PublicLastSellPrice : 0)} {OperatingExchangeCurrency} \n" +
                                 $" *Target Value in {OperatingExchangeCurrency}:* {finalPortfolioValueWhenBuying / order.Price} {OperatingExchangeCurrency}"
                             );
+                            var immediateNextSellOrderPrice = new[]
+                                                              {
+                                                                  CurrentOrderbook?.Asks?.Count > 10
+                                                                      ? CurrentOrderbook.Asks.Skip(10).Take(
+                                                                              (int) Math.Floor(
+                                                                                  (decimal) ((CurrentOrderbook?.Asks
+                                                                                                 ?.Count)
+                                                                                             .GetValueOrDefault() *
+                                                                                             0.5)))
+                                                                          ?.Max(item => item[0])
+                                                                      : sellingPriceInPrinciple,
+                                                                  sellingPriceInPrinciple, PublicLastSellPrice,
+                                                                  AccountLastSellOpenOrder?.Price,
+                                                                  AccountLastSellPrice
+                                                              }.Max() * (1 + TradingStrategy
+                                                                             .MarketChangeSensitivityRatio +
+                                                                         SellingFeeInPercentage) +
+                                                              SellingFeeInAmount;
+                            if (immediateNextSellOrderPrice > sellingPriceInPrinciple)
+                            {
+                                NextSellPriceProposalInRecord = immediateNextSellOrderPrice.GetValueOrDefault();
+                            }
+                            else
+                            {
+                                NextSellPriceProposalInRecord = 0;
+                            }
+
+
                             Thread.Sleep(1000);
                             ApiRequestcrruedAllowance++;
                             LastTimeBuyOrderExecution = DateTime.Now;
@@ -1369,6 +1415,35 @@ namespace mleader.tradingbot.Engine
                                 $" *Current Value in {OperatingExchangeCurrency}:* {(PublicLastSellPrice > 0 ? originalPortfolioValueWhenSelling / PublicLastSellPrice : 0)} {OperatingExchangeCurrency} \n" +
                                 $" *Target Value in {OperatingExchangeCurrency}:* {finalPortfolioValueWhenSelling / order.Price} {OperatingExchangeCurrency}"
                             );
+                            var immediateNextBuyOrderPrice = new[]
+                                                             {
+                                                                 CurrentOrderbook?.Bids?.Count > 10
+                                                                     ? CurrentOrderbook.Bids.Skip(10).Take(
+                                                                             (int) Math.Floor(
+                                                                                 (decimal) ((CurrentOrderbook?.Bids
+                                                                                                ?.Count)
+                                                                                            .GetValueOrDefault() *
+                                                                                            0.5)))
+                                                                         ?.Max(item => item[0])
+                                                                     : buyingPriceInPrinciple,
+                                                                 buyingPriceInPrinciple, PublicLastPurchasePrice,
+                                                                 AccountLastPurchasePrice,
+                                                                 AccountLastBuyOpenOrder?.Price
+                                                             }.Min() *
+                                                             (1 - TradingStrategy.MarketChangeSensitivityRatio -
+                                                              BuyingFeeInPercentage) -
+                                                             BuyingFeeInAmount;
+
+                            if (immediateNextBuyOrderPrice < buyingPriceInPrinciple && immediateNextBuyOrderPrice > 0)
+                            {
+                                NextBuyPriceProposalInRecord = immediateNextBuyOrderPrice.GetValueOrDefault();
+                            }
+                            else
+                            {
+                                NextBuyPriceProposalInRecord = 0;
+                            }
+
+
                             Thread.Sleep(1000);
                             ApiRequestcrruedAllowance++;
                             LastTimeSellOrderExecution = DateTime.Now;
@@ -1400,6 +1475,10 @@ namespace mleader.tradingbot.Engine
 
                                 Console.ResetColor();
                             }
+                        }
+                        else
+                        {
+                            Console.WriteLine("EXECUTION OF SELLING FAILED!!!");
                         }
                     }
                 }

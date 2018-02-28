@@ -154,7 +154,7 @@ namespace mleader.tradingbot
             if (orderCapPercentageOnInit <= 0)
                 orderCapPercentageOnInit = 0.25m;
 
-            Console.WriteLine("Order Cap Percentage On Init: (default 0.3)");
+            Console.WriteLine("Order Cap Percentage After Init: (default 0.3)");
             var orderCapPercentageAfterInit =
                 NumericUtils.GetDecimalValueFromObject(Console.ReadLine());
             if (orderCapPercentageAfterInit <= 0)

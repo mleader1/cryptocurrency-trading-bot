@@ -63,7 +63,7 @@ namespace mleader.tradingbot.Engine
         /// Load data required for strategy calculations from exchange Apis
         /// </summary>
         /// <returns></returns>
-        Task<bool> MarkeDecisionsAsync();
+        Task<bool> MakeDecisionsAsync();
 
         /// <summary>
         /// [SellingPriceInPrinciple] = [ProposedSellingPrice] * (1+ [TradingFeeInPercentage] + [AverageTradingChangeRatio] * ([IsPublicUp]? 1: -1)) + [TradingFeeInAmount]
