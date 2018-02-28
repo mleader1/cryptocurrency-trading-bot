@@ -10,6 +10,7 @@ ProjectSection(SolutionItems) = preProject
 	README.md = README.md
 	demo.png = demo.png
 	LICENSE = LICENSE
+	NuGet.config = NuGet.config
 EndProjectSection
 EndProject
 Global
