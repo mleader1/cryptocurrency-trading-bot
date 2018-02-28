@@ -581,9 +581,27 @@ namespace mleader.tradingbot.Engine
             }
 
             if (buyingPriceInPrinciple > NextBuyPriceProposalInRecord && NextBuyPriceProposalInRecord > 0)
-                buyingPriceInPrinciple = NextBuyPriceProposalInRecord;
+            {
+                if (Math.Abs(NextBuyPriceProposalInRecord - buyingPriceInPrinciple) / buyingPriceInPrinciple >
+                    (TradingStrategy.MarketChangeSensitivityRatio + AverageTradingChangeRatio) * 10)
+                {
+                    NextBuyPriceProposalInRecord = 0;
+                }
+                else
+                    buyingPriceInPrinciple = NextBuyPriceProposalInRecord;
+            }
+
             if (sellingPriceInPrinciple < NextSellPriceProposalInRecord && NextSellPriceProposalInRecord > 0)
-                sellingPriceInPrinciple = NextSellPriceProposalInRecord;
+            {
+                if (Math.Abs(NextSellPriceProposalInRecord - sellingPriceInPrinciple) / sellingPriceInPrinciple >
+                    (TradingStrategy.MarketChangeSensitivityRatio + AverageTradingChangeRatio) * 10)
+
+                {
+                    NextSellPriceProposalInRecord = 0;
+                }
+                else
+                    sellingPriceInPrinciple = NextSellPriceProposalInRecord;
+            }
 
             if (isBullMarket && isBullMarketContinuable)
             {
@@ -1177,8 +1195,8 @@ namespace mleader.tradingbot.Engine
                             );
                             var immediateNextSellOrderPrice = new[]
                                                               {
-                                                                  CurrentOrderbook?.Asks?.Count > 10
-                                                                      ? CurrentOrderbook.Asks.Skip(10).Take(
+                                                                  CurrentOrderbook?.Asks?.Count > 1
+                                                                      ? CurrentOrderbook.Asks.Take(
                                                                               (int) Math.Floor(
                                                                                   (decimal) ((CurrentOrderbook?.Asks
                                                                                                  ?.Count)
@@ -1201,6 +1219,9 @@ namespace mleader.tradingbot.Engine
                             {
                                 NextSellPriceProposalInRecord = 0;
                             }
+
+                            if (buyingPriceInPrinciple == NextBuyPriceProposalInRecord)
+                                NextBuyPriceProposalInRecord = 0;
 
 
                             Thread.Sleep(1000);
@@ -1417,8 +1438,8 @@ namespace mleader.tradingbot.Engine
                             );
                             var immediateNextBuyOrderPrice = new[]
                                                              {
-                                                                 CurrentOrderbook?.Bids?.Count > 10
-                                                                     ? CurrentOrderbook.Bids.Skip(10).Take(
+                                                                 CurrentOrderbook?.Bids?.Count > 1
+                                                                     ? CurrentOrderbook.Bids.Take(
                                                                              (int) Math.Floor(
                                                                                  (decimal) ((CurrentOrderbook?.Bids
                                                                                                 ?.Count)
@@ -1443,6 +1464,8 @@ namespace mleader.tradingbot.Engine
                                 NextBuyPriceProposalInRecord = 0;
                             }
 
+                            if (sellingPriceInPrinciple == NextSellPriceProposalInRecord)
+                                NextSellPriceProposalInRecord = 0;
 
                             Thread.Sleep(1000);
                             ApiRequestcrruedAllowance++;

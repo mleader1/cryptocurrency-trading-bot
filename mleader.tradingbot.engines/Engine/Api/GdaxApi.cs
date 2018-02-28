@@ -114,11 +114,31 @@ namespace mleader.tradingbot.Engine.Api
                 product_id = $"{exchangeCurrency}-{targetCurrency}",
                 price,
                 size = amount,
-                time_in_force = "GTC"
+                time_in_force = "GTC",
+                post_only = true
             };
             PrepareRequest(HttpMethod.Post, path, content.JsonSerialize());
             Rest.Add(content);
-            return (await Rest.PostAsync<string>(path)).JsonDeserialize<GdaxOrder>();
+            var result = (await Rest.PostAsync<string>(path)).JsonDeserialize<GdaxOrder>();
+            if (result == null)
+            {
+                //second attempt to be post_only=false
+                content = new
+                {
+                    type = "limit",
+                    side = orderType == OrderType.Buy ? "buy" : "sell",
+                    product_id = $"{exchangeCurrency}-{targetCurrency}",
+                    price,
+                    size = amount,
+                    time_in_force = "GTC",
+                    post_only = false
+                };
+                PrepareRequest(HttpMethod.Post, path, content.JsonSerialize());
+                Rest.Add(content);
+                result = (await Rest.PostAsync<string>(path)).JsonDeserialize<GdaxOrder>();
+            }
+
+            return result;
         }
 
         public async Task<bool> CancelOrderAsync(IOrder order)
