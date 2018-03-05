@@ -1044,7 +1044,7 @@ namespace mleader.tradingbot.Engine
 
                     //If holding, better cancel previous buying orders that are lower than current price
                     var invalidatedOrders = AccountOpenOrders?.Where(item =>
-                        item.Type == OrderType.Buy && item.Price >= buyingPriceInPrinciple &&
+                        item.Type == OrderType.Buy && item.Price > buyingPriceInPrinciple &&
                         item.Timestamp.AddHours((double) TradingStrategy.PriceCorrectionFrequencyInHours) <=
                         DateTime.Now);
                     if (invalidatedOrders?.Count() > 0)
@@ -1291,7 +1291,7 @@ namespace mleader.tradingbot.Engine
 
                     //If holding, better cancel previous selling orders that are lower than current price
                     var invalidatedOrders = AccountOpenOrders?.Where(item =>
-                        item.Type == OrderType.Sell && item.Price <= sellingPriceInPrinciple);
+                        item.Type == OrderType.Sell && item.Price < sellingPriceInPrinciple);
                     if (invalidatedOrders?.Count() > 0)
                     {
                         Console.BackgroundColor = ConsoleColor.DarkRed;
