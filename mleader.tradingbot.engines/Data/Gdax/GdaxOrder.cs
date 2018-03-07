@@ -15,15 +15,16 @@ namespace mleader.tradingbot.engines.Data.Gdax
 
         [DataMember(Name = "created_at")]
         [JsonProperty("created_at")]
-        public DateTime Timestamp { get; }
+        public DateTime CreatedAt { get; set; }
+
+        public DateTime Timestamp => CreatedAt;
 
         [DataMember(Name = "side")]
         [JsonProperty("side")]
         public string OrderSide { get; set; }
 
         [JsonIgnore]
-        [IgnoreDataMember]
-        public OrderType Type
+        [IgnoreDataMember] public OrderType Type
         {
             get => OrderSide == "buy" ? OrderType.Buy : OrderType.Sell;
             set => OrderSide = value == OrderType.Buy ? "buy" : "sell";
@@ -38,8 +39,7 @@ namespace mleader.tradingbot.engines.Data.Gdax
         public decimal Amount { get; set; }
 
         [JsonIgnore]
-        [IgnoreDataMember]
-        public decimal Pending
+        [IgnoreDataMember] public decimal Pending
         {
             get => Settled ? 0 : Amount;
             set { }

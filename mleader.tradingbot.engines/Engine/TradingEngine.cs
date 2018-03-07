@@ -951,13 +951,21 @@ namespace mleader.tradingbot.Engine
 
             if (isBullMarket && isBullMarketContinuable || !isBullMarket && isBearMarketContinuable)
             {
+                var aggregateAvg1 = CurrentOrderbook?.Asks?.Sum(item => item[0] * item[1]);
+                var aggregateAvg2 = CurrentOrderbook?.Bids?.Sum(item => item[0] * item[1]);
+                if (aggregateAvg1 > 0)
+                {
+                    aggregateAvg1 = aggregateAvg1 / CurrentOrderbook?.Asks?.Sum(item => item[1]);
+                }
+
+                if (aggregateAvg2 > 0)
+                {
+                    aggregateAvg2 = aggregateAvg2 / CurrentOrderbook?.Bids?.Sum(item => item[1]);
+                }
+
                 var betterHoldBids = AccountOpenOrders?.Where(item => item.Type == OrderType.Buy &&
-                                                                      CurrentOrderbook?.Asks?.Take(10)
-                                                                          ?.Count(bid => bid[0] >= item.Price) >
-                                                                      0 &&
-                                                                      CurrentOrderbook?.Bids?.Take(10)
-                                                                          ?.Count(ask => ask[0] <= item.Price) >
-                                                                      0);
+                                                                      aggregateAvg1 <= item.Price &&
+                                                                      aggregateAvg2 <= item.Price);
                 if (betterHoldBids?.Count() > 0)
                 {
                     Console.BackgroundColor = ConsoleColor.DarkRed;
@@ -982,16 +990,14 @@ namespace mleader.tradingbot.Engine
                 }
 
                 var betterHoldAsks = AccountOpenOrders?.Where(item => item.Type == OrderType.Sell &&
-                                                                      CurrentOrderbook?.Asks?.Take(10)
-                                                                          ?.Count(ask => ask[0] <= item.Price) > 0 &&
-                                                                      CurrentOrderbook?.Bids?.Take(10)
-                                                                          ?.Count(bid => bid[0] >= item.Price) > 0);
-                if (betterHoldBids?.Count() > 0)
+                                                                      aggregateAvg1 >= item.Price &&
+                                                                      aggregateAvg2 >= item.Price);
+                if (betterHoldAsks?.Count() > 0)
                 {
                     Console.BackgroundColor = ConsoleColor.DarkRed;
                     Console.ForegroundColor = ConsoleColor.White;
                     Console.WriteLine("Cancelling open SELL orders that may better off if hold");
-                    foreach (var invalidatedOrder in betterHoldBids)
+                    foreach (var invalidatedOrder in betterHoldAsks)
                     {
                         Task.Run(async () =>
                         {
@@ -1196,12 +1202,7 @@ namespace mleader.tradingbot.Engine
                             var immediateNextSellOrderPrice = new[]
                                                               {
                                                                   CurrentOrderbook?.Asks?.Count > 1
-                                                                      ? CurrentOrderbook.Asks.Take(
-                                                                              (int) Math.Floor(
-                                                                                  (decimal) ((CurrentOrderbook?.Asks
-                                                                                                 ?.Count)
-                                                                                             .GetValueOrDefault() *
-                                                                                             0.5)))
+                                                                      ? CurrentOrderbook.Asks.Take(100)
                                                                           ?.Max(item => item[0])
                                                                       : sellingPriceInPrinciple,
                                                                   sellingPriceInPrinciple, PublicLastSellPrice,
@@ -1439,12 +1440,7 @@ namespace mleader.tradingbot.Engine
                             var immediateNextBuyOrderPrice = new[]
                                                              {
                                                                  CurrentOrderbook?.Bids?.Count > 1
-                                                                     ? CurrentOrderbook.Bids.Take(
-                                                                             (int) Math.Floor(
-                                                                                 (decimal) ((CurrentOrderbook?.Bids
-                                                                                                ?.Count)
-                                                                                            .GetValueOrDefault() *
-                                                                                            0.5)))
+                                                                     ? CurrentOrderbook.Bids.Take(100)
                                                                          ?.Max(item => item[0])
                                                                      : buyingPriceInPrinciple,
                                                                  buyingPriceInPrinciple, PublicLastPurchasePrice,
@@ -1646,10 +1642,11 @@ namespace mleader.tradingbot.Engine
         private decimal GetMaximumBuyableAmountBasedOnReserveRatio(decimal buyingPriceInPrinciple)
         {
             var maxAmount = buyingPriceInPrinciple > 0
-                ? (GetCurrentPortfolioEstimatedTargetValue(buyingPriceInPrinciple) *
+                ? ((GetCurrentPortfolioEstimatedTargetValue(buyingPriceInPrinciple)
+                    - BuyingFeeInAmount - ExchangeCurrencyBalance?.InOrders) *
                    (1 - TradingStrategy.MinimumReservePercentageAfterInitInTargetCurrency) /
-                   buyingPriceInPrinciple *
-                   (1 - BuyingFeeInPercentage) - BuyingFeeInAmount)
+                   buyingPriceInPrinciple * (1 - BuyingFeeInPercentage))
+                .GetValueOrDefault()
                 : 0;
             if (maxAmount > TargetCurrencyBalance.Available)
                 maxAmount = TargetCurrencyBalance.Available;
@@ -1659,12 +1656,14 @@ namespace mleader.tradingbot.Engine
         private decimal GetMaximumSellableAmountBasedOnReserveRatio(decimal sellingPriceInPrinciple)
 
         {
-            var maxAmount = GetCurrentPortfolioEstimatedExchangeValue(sellingPriceInPrinciple) *
+            var maxAmount = (GetCurrentPortfolioEstimatedExchangeValue(sellingPriceInPrinciple)
+                             -
+                             TargetCurrencyBalance?.InOrders / sellingPriceInPrinciple) *
                             (1 - TradingStrategy.MinimumReservePercentageAfterInitInExchangeCurrency) *
                             (1 - SellingFeeInPercentage) - SellingFeeInAmount;
             if (maxAmount > ExchangeCurrencyBalance.Available)
                 maxAmount = ExchangeCurrencyBalance.Available;
-            return maxAmount;
+            return maxAmount.GetValueOrDefault();
         }
 
         private decimal GetCurrentPortfolioEstimatedExchangeValue(decimal exchangePrice)
